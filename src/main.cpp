@@ -32,7 +32,7 @@ void demo(){
 
 void setup() {
   // put your setup code here, to run once:
-   Serial.printf("reset reason = %d\n", esp_reset_reason());
+   Serial.printf("SD CARD pin = %d\n", digitalRead(CONFIG_SD_CD_PIN));
     lv_init();
 
     HAL::HAL_Init();

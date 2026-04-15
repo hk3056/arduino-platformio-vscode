@@ -66,17 +66,26 @@ static bool SD_TestOpenFile(const char* path)
     file.close();
     return true;
 }
+static bool SD_IsInserted()
+{
+    return digitalRead(CONFIG_SD_CD_PIN) == CONFIG_SD_CD_ACTIVE_LEVEL;
+}
 bool HAL::SD_Init()
 {
-    bool retval = true;
+    pinMode(CONFIG_SD_CD_PIN, INPUT_PULLUP);
 
+    if (!SD_IsInserted())
+    {
+        SD_IsReady = false;
+        SD_CardSize = 0;
+        Serial.printf("SD: no card.\r\n");
+        return false;
+    }
+
+    bool retval = true;
     Serial.print("SD: init...");
 
-    sdSPI.begin(CONFIG_SD_SCK_PIN,
-                CONFIG_SD_MISO_PIN,
-                CONFIG_SD_MOSI_PIN,
-                CONFIG_SD_CS_PIN);
-
+    sdSPI.begin(CONFIG_SD_SCK_PIN, CONFIG_SD_MISO_PIN, CONFIG_SD_MOSI_PIN, CONFIG_SD_CS_PIN);
     retval = sd.begin(SdSpiConfig(CONFIG_SD_CS_PIN, SHARED_SPI, SD_SPI_CLOCK, &sdSPI));
 
     SD_IsReady = retval;
@@ -87,13 +96,9 @@ bool HAL::SD_Init()
         FsDateTime::setCallback(SD_GetDateTime);
         SD_CheckDir(CONFIG_TRACK_RECORD_FILE_DIR_NAME);
 
-        Serial.printf(
-            "success, Type: %s, Size: %.2f GB\r\n",
-            SD_GetTypeName(),
-            SD_GetCardSizeMB() / 1024.0f
-        );
-
-        SD_TestOpenFile("/MAP/16/52763/24635/tile.bin");   // 换成你确定存在的瓦片
+        Serial.printf("success, Type: %s, Size: %.2f GB\r\n",
+                      SD_GetTypeName(),
+                      SD_GetCardSizeMB() / 1024.0f);
     }
     else
     {
@@ -173,6 +178,18 @@ void HAL::SD_SetEventCallback(SD_CallbackFunction_t callback)
 
 void HAL::SD_Update()
 {
-    /// bool isInsert = (digitalRead(CONFIG_SD_CD_PIN) == LOW);
-    /// CM_VALUE_MONITOR(isInsert, SD_Check(isInsert));
+    static int lastState = -1;
+    bool isInsert = SD_IsInserted();
+
+    if (lastState == -1)
+    {
+        lastState = isInsert;
+        return;
+    }
+
+    if (isInsert != lastState)
+    {
+        lastState = isInsert;
+        SD_Check(isInsert);
+    }
 }

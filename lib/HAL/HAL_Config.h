@@ -82,7 +82,8 @@
 #define CONFIG_SD_MISO_PIN   13
 #define CONFIG_SD_SCK_PIN    12
 #define CONFIG_SD_CS_PIN     10
-
+#define CONFIG_SD_CD_PIN     14
+#define CONFIG_SD_CD_ACTIVE_LEVEL    LOW
 /* HAL Interrupt Update Timer */
 //#define CONFIG_HAL_UPDATE_TIM       TIM4
 
