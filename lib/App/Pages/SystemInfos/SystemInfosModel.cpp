@@ -27,17 +27,20 @@ void SystemInfosModel::Deinit()
     }
 }
 
-void SystemInfosModel::GetSportInfo(
-    float* trip,
-    char* time, uint32_t len,
-    float* maxSpd
-)
+void SystemInfosModel::GetSportInfo(float* trip, char* time, uint32_t len, float* maxSpd)
 {
     HAL::SportStatus_Info_t sport = { 0 };
     account->Pull("SportStatus", &sport, sizeof(sport));
-    *trip = sport.totalDistance / 1000;
-    DataProc::MakeTimeString(sport.totalTime, time, len);
+
+    *trip = sport.totalDistance / 1000.0f;
     *maxSpd = sport.speedMaxKph;
+
+    if (time && len > 0)
+    {
+        memset(time, 0, len);
+        DataProc::MakeTimeString(sport.totalTime, time, len);
+        time[len - 1] = '\0';
+    }
 }
 
 void SystemInfosModel::GetGPSInfo(
@@ -155,21 +158,20 @@ void SystemInfosModel::GetBatteryInfo(
     state[len - 1] = '\0';
 }
 
-void SystemInfosModel::GetStorageInfo(
-    bool* detect,
-    const char** type,
-    char* usage, uint32_t len
-)
+void SystemInfosModel::GetStorageInfo(bool* detect, const char** type, char* usage, uint32_t len)
 {
     DataProc::Storage_Basic_Info_t info = { 0 };
     account->Pull("Storage", &info, sizeof(info));
+
     *detect = info.isDetect;
-    *type = info.type;
-    snprintf(
-        usage, len,
-        "%0.1f GB",
-        info.totalSizeMB / 1024.0f
-    );
+    *type = (info.type != nullptr) ? info.type : "-";
+
+    if (usage && len > 0)
+    {
+        memset(usage, 0, len);
+        snprintf(usage, len, "%0.1f GB", info.totalSizeMB / 1024.0f);
+        usage[len - 1] = '\0';
+    }
 }
 
 void SystemInfosModel::SetStatusBarStyle(DataProc::StatusBar_Style_t style)

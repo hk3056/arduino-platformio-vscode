@@ -1,7 +1,11 @@
+#include <stdio.h>
 #include "SystemInfosView.h"
 
 using namespace Page;
-
+static const char* SafeStr(const char* s)
+{
+    return s ? s : "-";
+}
 #define ITEM_HEIGHT_MIN   100
 #define ITEM_PAD          ((LV_VER_RES - ITEM_HEIGHT_MIN) / 2)
 
@@ -301,169 +305,108 @@ void SystemInfosView::Item_Create(
     lv_obj_set_height(icon, height);
 }
 
-void SystemInfosView::SetSport(
-    float trip,
-    const char* time,
-    float maxSpd
-)
+void SystemInfosView::SetSport(float trip, const char* time, float maxSpd)
 {
-    lv_label_set_text_fmt(
-        ui.sport.labelData,
-        "%0.2f km\n"
-        "%s\n"
-        "%0.1f km/h",
-        trip,
-        time,
-        maxSpd
-    );
+    char text[96];
+    snprintf(text, sizeof(text),
+             "%0.2f km\n%s\n%0.1f km/h",
+             trip,
+             SafeStr(time),
+             maxSpd);
+    text[sizeof(text) - 1] = '\0';
+    lv_label_set_text(ui.sport.labelData, text);
 }
 
-void SystemInfosView::SetGPS(
-    float lat,
-    float lng,
-    float alt,
-    const char* utc,
-    float course,
-    float speed
-)
+void SystemInfosView::SetGPS(float lat, float lng, float alt, const char* utc, float course, float speed)
 {
-    lv_label_set_text_fmt(
-        ui.gps.labelData,
-        "%0.6f\n"
-        "%0.6f\n"
-        "%0.2f m\n"
-        "%s\n"
-        "%0.1f deg\n"
-        "%0.1f km/h",
-        lat,
-        lng,
-        alt,
-        utc,
-        course,
-        speed
-    );
+    char text[128];
+    snprintf(text, sizeof(text),
+             "%0.6f\n%0.6f\n%0.2f m\n%s\n%0.1f deg\n%0.1f km/h",
+             lat,
+             lng,
+             alt,
+             SafeStr(utc),
+             course,
+             speed);
+    text[sizeof(text) - 1] = '\0';
+    lv_label_set_text(ui.gps.labelData, text);
 }
 
-void SystemInfosView::SetMAG(
-    int dir,
-    int x,
-    int y,
-    int z
-)
+void SystemInfosView::SetMAG(int dir, int x, int y, int z)
 {
-    lv_label_set_text_fmt(
-        ui.mag.labelData,
-        "%d deg\n"
-        "%d\n"
-        "%d\n"
-        "%d",
-        dir,
-        x,
-        y,
-        z
-    );
+    char text[96];
+    snprintf(text, sizeof(text),
+             "%d deg\n%d\n%d\n%d",
+             dir, x, y, z);
+    text[sizeof(text) - 1] = '\0';
+    lv_label_set_text(ui.mag.labelData, text);
 }
 
-void SystemInfosView::SetIMU(
-    int step,
-    const char* info
-)
+void SystemInfosView::SetIMU(int step, const char* info)
 {
-    lv_label_set_text_fmt(
-        ui.imu.labelData,
-        "%d\n"
-        "%s",
-        step,
-        info
-    );
+    char text[160];
+    snprintf(text, sizeof(text),
+             "%d\n%s",
+             step,
+             SafeStr(info));
+    text[sizeof(text) - 1] = '\0';
+    lv_label_set_text(ui.imu.labelData, text);
 }
 
-void SystemInfosView::SetPHT(
-    float pressure,
-    float humidity,
-    float temperature
-)
+void SystemInfosView::SetPHT(float pressure, float humidity, float temperature)
 {
-    lv_label_set_text_fmt(
-        ui.pht.labelData,
-        "%0.1f hPa\n"
-        "%0.1f %%\n"
-        "%0.1f C",
-        pressure / 100,
-        humidity,
-        temperature
-    );
+    char text[96];
+    snprintf(text, sizeof(text),
+             "%0.1f hPa\n%0.1f %%\n%0.1f C",
+             pressure / 100.0f,
+             humidity,
+             temperature);
+    text[sizeof(text) - 1] = '\0';
+    lv_label_set_text(ui.pht.labelData, text);
 }
 
-void SystemInfosView::SetRTC(
-    const char* dateTime
-)
+void SystemInfosView::SetRTC(const char* dateTime)
 {
-    lv_label_set_text(
-        ui.rtc.labelData,
-        dateTime
-    );
+    lv_label_set_text(ui.rtc.labelData, SafeStr(dateTime));
 }
 
-void SystemInfosView::SetBattery(
-    int usage,
-    float voltage,
-    const char* state
-)
+void SystemInfosView::SetBattery(int usage, float voltage, const char* state)
 {
-    lv_label_set_text_fmt(
-        ui.battery.labelData,
-        "%d %%\n"
-        "%0.2f V\n"
-        "%s",
-        usage,
-        voltage,
-        state
-    );
+    char text[96];
+    snprintf(text, sizeof(text),
+             "%d %%\n%0.2f V\n%s",
+             usage,
+             voltage,
+             SafeStr(state));
+    text[sizeof(text) - 1] = '\0';
+    lv_label_set_text(ui.battery.labelData, text);
 }
 
-void SystemInfosView::SetStorage(
-    const char* detect,
-    const char* size,
-    const char* type,
-    const char* version
-)
+void SystemInfosView::SetStorage(const char* detect, const char* size, const char* type, const char* version)
 {
-    lv_label_set_text_fmt(
-        ui.storage.labelData,
-        "%s\n"
-        "%s\n"
-        "%s\n"
-        "%s",
-        detect,
-        size,
-        type,
-        version
-    );
+    char text[128];
+    snprintf(text, sizeof(text),
+             "%s\n%s\n%s\n%s",
+             SafeStr(detect),
+             SafeStr(size),
+             SafeStr(type),
+             SafeStr(version));
+    text[sizeof(text) - 1] = '\0';
+    lv_label_set_text(ui.storage.labelData, text);
 }
 
-void SystemInfosView::SetSystem(
-    const char* firmVer,
-    const char* authorName,
-    const char* lvglVer,
-    const char* bootTime,
-    const char* compilerName,
-    const char* bulidTime
-)
+void SystemInfosView::SetSystem(const char* firmVer, const char* authorName, const char* lvglVer,
+                                const char* bootTime, const char* compilerName, const char* bulidTime)
 {
-    lv_label_set_text_fmt(
-        ui.system.labelData,
-        "%s\n"
-        "%s\n"
-        "%s\n"
-        "%s\n"
-        "%s\n"
-        "%s",
-        firmVer,
-        authorName,
-        lvglVer,
-        bootTime,
-        compilerName,
-        bulidTime
-    );
+    char text[256];
+    snprintf(text, sizeof(text),
+             "%s\n%s\n%s\n%s\n%s\n%s",
+             SafeStr(firmVer),
+             SafeStr(authorName),
+             SafeStr(lvglVer),
+             SafeStr(bootTime),
+             SafeStr(compilerName),
+             SafeStr(bulidTime));
+    text[sizeof(text) - 1] = '\0';
+    lv_label_set_text(ui.system.labelData, text);
 }
