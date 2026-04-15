@@ -3,7 +3,7 @@
 #include "HAL.h"
 #include <Arduino.h>
 
-#define SCREEN_BUFFER_LINES          80
+#define SCREEN_BUFFER_LINES          120
 #define SCREEN_BUFFER_SIZE           (CONFIG_SCREEN_HOR_RES * SCREEN_BUFFER_LINES)
 #define SCREEN_USE_DOUBLE_BUFFER     0   // 并口同步刷新，先优先用大单缓冲
 

@@ -177,12 +177,19 @@ void HAL::MAG_Update()
     }
 
     s_headingDeg = norm360(s_headingDeg + MAG_HEADING_OFFSET_DEG);
+    Serial.printf("MAG: x=%d y=%d z=%d heading=%.1f\r\n",
+                s_x, s_y, s_z, s_headingDeg);
 
+    HAL::MAG_Info_t magInfo = {};
+    magInfo.dir = s_headingDeg;
+    magInfo.x = s_x;
+    magInfo.y = s_y;
+    magInfo.z = s_z;
 
-
-    /* 如果以后你确认了 CommitFunc_t 的签名，再在这里接回调 */
-    (void)CommitFunc;
-    (void)UserData;
+    if (CommitFunc)
+    {
+        CommitFunc(&magInfo, UserData);
+    }
 }
 
 bool HAL::MAG_IsReady()

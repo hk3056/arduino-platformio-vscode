@@ -9,7 +9,10 @@ static void set_angle(void * obj, int32_t v)
     lv_arc_set_value((lv_obj_t*)obj, v);
     //123
 }
-
+static void lv_tick_task(void* arg)
+{
+    lv_tick_inc(2);
+}
 void demo(){
     /*Create an Arc*/
     lv_obj_t * arc = lv_arc_create(lv_scr_act());
@@ -30,18 +33,23 @@ void demo(){
     lv_anim_start(&a);
 }
 
-void setup() {
-  // put your setup code here, to run once:
-   Serial.printf("SD CARD pin = %d\n", digitalRead(CONFIG_SD_CD_PIN));
+void setup()
+{
     lv_init();
-
     HAL::HAL_Init();
     lv_port_init();
-
     App_Init();
-  //  demo();
-    HAL::Power_SetEventCallback(App_Uninit);
-    HAL::Memory_DumpInfo();
+
+    const esp_timer_create_args_t lvgl_tick_timer_args = {
+        .callback = &lv_tick_task,
+        .arg = nullptr,
+        .dispatch_method = ESP_TIMER_TASK,
+        .name = "lvgl_tick"
+    };
+
+    static esp_timer_handle_t lvgl_tick_timer = nullptr;
+    esp_timer_create(&lvgl_tick_timer_args, &lvgl_tick_timer);
+    esp_timer_start_periodic(lvgl_tick_timer, 2000); // 2ms
 }
 
 void loop() {
@@ -49,6 +57,5 @@ void loop() {
     HAL::HAL_Update();
     vTaskDelay( 5 / portTICK_PERIOD_MS);
     lv_timer_handler();
-    lv_tick_inc(5);
-//    __wfi();
+
 }
