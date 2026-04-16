@@ -13,6 +13,7 @@ void LiveMapModel::Init()
 {
     account = new Account("LiveMapModel", DataProc::Center(), 0, this);
     account->Subscribe("GPS");
+    account->Subscribe("MAG");
     account->Subscribe("SportStatus");
     account->Subscribe("TrackFilter");
     account->Subscribe("SysConfig");
@@ -48,7 +49,16 @@ void LiveMapModel::GetGPS_Info(HAL::GPS_Info_t* info)
         }
     }
 }
+bool LiveMapModel::GetMAG_Info(HAL::MAG_Info_t* info)
+{
+    if (info == nullptr)
+    {
+        return false;
+    }
 
+    memset(info, 0, sizeof(HAL::MAG_Info_t));
+    return account->Pull("MAG", info, sizeof(HAL::MAG_Info_t)) == Account::RES_OK;
+}
 void LiveMapModel::GetArrowTheme(char* buf, uint32_t size)
 {
     DataProc::SysConfig_Info_t sysConfig;

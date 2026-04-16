@@ -19,6 +19,7 @@ public:
     void Init();
     void Deinit();
     void GetGPS_Info(HAL::GPS_Info_t* info);
+    bool GetMAG_Info(HAL::MAG_Info_t* info);
     void GetArrowTheme(char* buf, uint32_t size);
     bool GetTrackFilterActive();
     void TrackReload(TrackPointFilter::Callback_t callback, void* userData);

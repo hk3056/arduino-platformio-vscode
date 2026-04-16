@@ -286,8 +286,18 @@ void LiveMap::CheckPosition()
         onMapTileContRefresh(&area, mapX, mapY);
     }
 
-    MapTileContUpdate(mapX, mapY, gpsInfo.course);
+    HAL::MAG_Info_t magInfo = { 0 };
+    bool hasMag = Model.GetMAG_Info(&magInfo);
 
+    float arrowCourse = gpsInfo.course;
+
+    // 时速低于 5 km/h 时优先用磁力计
+    if (Model.sportStatusInfo.speedKph < 5.0f && hasMag)
+    {
+        arrowCourse = magInfo.dir;
+    }
+
+    MapTileContUpdate(mapX, mapY, arrowCourse);
     // 缩放那一瞬间不追加轨迹点，避免额外计算
     if (priv.isTrackAvtive && !zoomChanged)
     {
@@ -450,10 +460,23 @@ void LiveMap::onEvent(lv_event_t* event)
     lv_obj_t* obj = lv_event_get_current_target(event);
     lv_event_code_t code = lv_event_get_code(event);
 
+    // 通用返回：右滑离开
     if (code == LV_EVENT_LEAVE)
     {
         instance->_Manager->Pop();
         return;
+    }
+
+    // 关键修复：处理按键/编码器确认键与返回键
+    if (code == LV_EVENT_KEY)
+    {
+        uint32_t key = lv_event_get_key(event);
+
+        if (key == LV_KEY_ESC || key == LV_KEY_ENTER)
+        {
+            instance->_Manager->Pop();
+            return;
+        }
     }
 
     if (obj == instance->View.ui.zoom.slider)
@@ -472,18 +495,19 @@ void LiveMap::onEvent(lv_event_t* event)
             s_lastZoomChangeTime = lv_tick_get();
             s_zoomDirty = true;
         }
-        else if (code == LV_EVENT_PRESSED)
+        else if (code == LV_EVENT_PRESSED || code == LV_EVENT_SHORT_CLICKED)
         {
             instance->_Manager->Pop();
+            return;
         }
     }
 
     if (obj == instance->View.ui.sportInfo.cont)
     {
-        if (code == LV_EVENT_PRESSED)
+        if (code == LV_EVENT_PRESSED || code == LV_EVENT_SHORT_CLICKED)
         {
             instance->_Manager->Pop();
+            return;
         }
     }
 }
-
