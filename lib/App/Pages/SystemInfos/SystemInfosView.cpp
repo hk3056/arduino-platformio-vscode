@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include "SystemInfosView.h"
-
+#define ITEM_WIDTH 220
+#define ICON_WIDTH 70
 using namespace Page;
 static const char* SafeStr(const char* s)
 {
@@ -34,6 +35,15 @@ void SystemInfosView::Create(lv_obj_t* root)
         "Total trip\n"
         "Total time\n"
         "Max speed"
+    );
+       
+    /* Item Bluetooth */
+    Item_Create_Symbol(
+        &ui.bluetooth,
+        root,
+        "Bluetooth",
+        LV_SYMBOL_BLUETOOTH,
+        "Bluetooth control"
     );
 
     /* Item GPS */
@@ -304,7 +314,74 @@ void SystemInfosView::Item_Create(
     lv_obj_set_height(cont, height);
     lv_obj_set_height(icon, height);
 }
+void SystemInfosView::Item_Create_Symbol(
+    item_t* item,
+    lv_obj_t* parent,
+    const char* name,
+    const char* symbol,
+    const char* infos
+)
+{
+    lv_obj_t* cont = lv_obj_create(parent);
+    lv_obj_enable_style_refresh(false);
+    lv_obj_remove_style_all(cont);
+    lv_obj_set_width(cont, ITEM_WIDTH);
+    lv_obj_clear_flag(cont, LV_OBJ_FLAG_SCROLLABLE);
+    item->cont = cont;
 
+    /* icon */
+    lv_obj_t* icon = lv_obj_create(cont);
+    lv_obj_enable_style_refresh(false);
+    lv_obj_remove_style_all(icon);
+    lv_obj_clear_flag(icon, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_style(icon, &style.icon, 0);
+    lv_obj_add_style(icon, &style.focus, LV_STATE_FOCUSED);
+    lv_obj_set_style_align(icon, LV_ALIGN_LEFT_MID, 0);
+    lv_obj_set_flex_flow(icon, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(
+        icon,
+        LV_FLEX_ALIGN_SPACE_AROUND,
+        LV_FLEX_ALIGN_CENTER,
+        LV_FLEX_ALIGN_CENTER
+    );
+
+    lv_obj_t* label = lv_label_create(icon);
+    lv_obj_enable_style_refresh(false);
+    lv_obj_set_style_text_font(label, ResourcePool::GetFont("bahnschrift_17"), 0);
+    lv_label_set_text(label, symbol);
+
+    label = lv_label_create(icon);
+    lv_obj_enable_style_refresh(false);
+    lv_label_set_text(label, name);
+
+    item->icon = icon;
+
+    /* infos */
+    label = lv_label_create(cont);
+    lv_obj_enable_style_refresh(false);
+    lv_label_set_text(label, infos);
+    lv_obj_add_style(label, &style.info, 0);
+    lv_obj_align(label, LV_ALIGN_LEFT_MID, 75, 0);
+    item->labelInfo = label;
+
+    /* data */
+    label = lv_label_create(cont);
+    lv_obj_enable_style_refresh(false);
+    lv_label_set_text(label, "-");
+    lv_obj_add_style(label, &style.data, 0);
+    lv_obj_align(label, LV_ALIGN_CENTER, 70, 0);
+    item->labelData = label;
+
+    lv_obj_move_foreground(icon);
+    lv_obj_enable_style_refresh(true);
+
+    lv_obj_update_layout(item->labelInfo);
+    lv_coord_t height = lv_obj_get_height(item->labelInfo);
+    height = LV_MAX(height, ITEM_HEIGHT_MIN);
+
+    lv_obj_set_height(cont, height);
+    lv_obj_set_height(icon, height);
+}
 void SystemInfosView::SetSport(float trip, const char* time, float maxSpd)
 {
     char text[96];

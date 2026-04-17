@@ -26,9 +26,8 @@ void SystemInfos::onViewLoad()
     Model.Init();
     View.Create(_root);
 
-    // 只绑定每个菜单项图标事件，不绑定 _root
-    SystemInfosView::item_t* item_group = (SystemInfosView::item_t*)&View.ui;
-    for (int i = 0; i < (int)(sizeof(View.ui) / sizeof(SystemInfosView::item_t)); i++)
+    SystemInfosView::item_t* item_group = ((SystemInfosView::item_t*)&View.ui);
+    for (int i = 0; i < sizeof(View.ui) / sizeof(SystemInfosView::item_t); i++)
     {
         AttachEvent(item_group[i].icon);
     }
@@ -236,7 +235,6 @@ void SystemInfos::onEvent(lv_event_t* event)
     SystemInfos* instance = (SystemInfos*)lv_event_get_user_data(event);
     LV_ASSERT_NULL(instance);
 
-    // 进入页面后的短时间内，不响应退出，防止菜单键残留
     if (lv_tick_elaps(s_enterTick) < 300)
     {
         return;
@@ -248,15 +246,34 @@ void SystemInfos::onEvent(lv_event_t* event)
     if (code == LV_EVENT_KEY)
     {
         uint32_t key = lv_event_get_key(event);
-        if (key == LV_KEY_ENTER || key == LV_KEY_ESC)
+
+        if (key == LV_KEY_ESC)
         {
+            instance->_Manager->Pop();
+            return;
+        }
+
+        if (key == LV_KEY_ENTER)
+        {
+            if (obj == instance->View.ui.bluetooth.icon)
+            {
+                instance->_Manager->Push("Pages/Bluetooth");
+                return;
+            }
+
             instance->_Manager->Pop();
             return;
         }
     }
 
-    if (code == LV_EVENT_SHORT_CLICKED)
+    if (code == LV_EVENT_SHORT_CLICKED || code == LV_EVENT_CLICKED)
     {
+        if (obj == instance->View.ui.bluetooth.icon)
+        {
+            instance->_Manager->Push("Pages/Bluetooth");
+            return;
+        }
+
         SystemInfosView::item_t* item_group = (SystemInfosView::item_t*)&instance->View.ui;
         for (int i = 0; i < (int)(sizeof(instance->View.ui) / sizeof(SystemInfosView::item_t)); i++)
         {

@@ -177,8 +177,6 @@ void HAL::MAG_Update()
     }
 
     s_headingDeg = norm360(s_headingDeg + MAG_HEADING_OFFSET_DEG);
-    Serial.printf("MAG: x=%d y=%d z=%d heading=%.1f\r\n",
-                s_x, s_y, s_z, s_headingDeg);
 
     HAL::MAG_Info_t magInfo = {};
     magInfo.dir = s_headingDeg;

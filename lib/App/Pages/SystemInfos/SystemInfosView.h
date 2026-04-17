@@ -21,17 +21,18 @@ public:
         lv_obj_t* labelData;
     } item_t;
 
-    struct
-    {
-        item_t sport;
-        item_t gps;
-        item_t mag;
-        item_t imu;
-        item_t pht;
-        item_t rtc;
-        item_t battery;
-        item_t storage;
-        item_t system;
+   struct {
+    item_t sport;
+    item_t bluetooth;
+    item_t gps;
+    item_t mag;
+    item_t imu;
+    item_t pht;
+    item_t rtc;
+    item_t battery;
+    item_t storage;
+    item_t system;
+   
     } ui;
 
 public:
@@ -103,12 +104,20 @@ private:
     void Style_Init();
     void Style_Reset();
     void Item_Create(
-        item_t* item,
-        lv_obj_t* parent,
-        const char* name,
-        const char* img_src,
-        const char* infos
-    );
+    item_t* item,
+    lv_obj_t* parent,
+    const char* name,
+    const char* img_src,
+    const char* infos
+);
+
+    void Item_Create_Symbol(
+    item_t* item,
+    lv_obj_t* parent,
+    const char* name,
+    const char* symbol,
+    const char* infos
+);
 };
 
 }
