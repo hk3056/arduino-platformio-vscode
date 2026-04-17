@@ -1,5 +1,5 @@
 #include "Bluetooth.h"
-#include "D:\vs123\arduino-platformio-vscode\lib\HAL\HAL_Bluetooth.h"
+#include "HAL_Bluetooth.h"
 
 using namespace Page;
 
@@ -39,6 +39,7 @@ void Bluetooth::onViewDidLoad()
 
 void Bluetooth::onViewWillAppear()
 {
+    lv_obj_clear_flag(_root, LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_style_bg_opa(_root, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_bg_color(_root, lv_color_black(), LV_PART_MAIN);
 
@@ -78,6 +79,13 @@ void Bluetooth::onViewDidAppear()
 
 void Bluetooth::onViewWillDisappear()
 {
+    lv_indev_t* indev = lv_indev_get_act();
+    if (indev)
+    {
+        lv_indev_wait_release(indev);
+    }
+
+    lv_obj_add_flag(_root, LV_OBJ_FLAG_HIDDEN);
 }
 
 void Bluetooth::onViewDidDisappear()
@@ -87,10 +95,24 @@ void Bluetooth::onViewDidDisappear()
         lv_timer_del(timer);
         timer = nullptr;
     }
+
+    lv_group_t* group = lv_group_get_default();
+    if (group)
+    {
+        lv_group_remove_obj(View.ui.swBluetooth);
+
+        for (int i = 0; i < 3; i++)
+        {
+            lv_group_remove_obj(View.ui.btnDevice[i]);
+        }
+
+        lv_group_remove_obj(View.ui.btnExit);
+    }
 }
 
 void Bluetooth::onViewUnload()
 {
+    lv_obj_clean(_root);
 }
 
 void Bluetooth::onViewDidUnload()
@@ -133,7 +155,10 @@ void Bluetooth::RefreshUI()
 
     if (info.connected)
     {
-        lv_label_set_text(View.ui.labelConnectedName, info.connectedName[0] ? info.connectedName : "Connected Device");
+        lv_label_set_text(
+            View.ui.labelConnectedName,
+            info.connectedName[0] ? info.connectedName : "Connected Device"
+        );
         lv_label_set_text(View.ui.labelConnectedInfo, "Connected");
     }
     else
@@ -155,7 +180,10 @@ void Bluetooth::RefreshUI()
 
         if (i < info.deviceCount)
         {
-            lv_label_set_text(View.ui.labelDevice[i], info.devices[i].name[0] ? info.devices[i].name : info.devices[i].address);
+            lv_label_set_text(
+                View.ui.labelDevice[i],
+                info.devices[i].name[0] ? info.devices[i].name : info.devices[i].address
+            );
         }
         else
         {
@@ -168,7 +196,10 @@ void Bluetooth::RefreshUI()
 void Bluetooth::onTimerUpdate(lv_timer_t* timer)
 {
     Bluetooth* instance = (Bluetooth*)timer->user_data;
-    if (!instance) return;
+    if (!instance)
+    {
+        return;
+    }
 
     instance->RefreshUI();
 
