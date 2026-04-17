@@ -24,14 +24,14 @@ public:
 
 private:
     void AttachEvent(lv_obj_t* obj);
-    void UpdateBluetoothState(bool isOn);
-    void SetConnectedDevice(int index);
+    void RefreshUI();
+    void TryStartScan();
     static void onEvent(lv_event_t* event);
+    static void onTimerUpdate(lv_timer_t* timer);
 
 private:
     BluetoothView View;
-    bool isBluetoothOn;
-    int connectedDeviceIndex;
+    lv_timer_t* timer;
 };
 
 }

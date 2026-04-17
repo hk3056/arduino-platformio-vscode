@@ -1,18 +1,11 @@
 #include "Bluetooth.h"
+#include "D:\vs123\arduino-platformio-vscode\lib\HAL\HAL_Bluetooth.h"
 
 using namespace Page;
 
-static const char* kBluetoothDeviceNames[3] =
-{
-    "Device A",
-    "Device B",
-    "Device C"
-};
-
 Bluetooth::Bluetooth()
 {
-    isBluetoothOn = true;
-    connectedDeviceIndex = -1;
+    timer = nullptr;
 }
 
 Bluetooth::~Bluetooth()
@@ -37,7 +30,7 @@ void Bluetooth::onViewLoad()
         AttachEvent(View.ui.btnDevice[i]);
     }
 
-    UpdateBluetoothState(isBluetoothOn);
+    RefreshUI();
 }
 
 void Bluetooth::onViewDidLoad()
@@ -54,6 +47,9 @@ void Bluetooth::onViewWillAppear()
     {
         lv_indev_wait_release(indev);
     }
+
+    TryStartScan();
+    RefreshUI();
 }
 
 void Bluetooth::onViewDidAppear()
@@ -72,6 +68,12 @@ void Bluetooth::onViewDidAppear()
         lv_group_focus_obj(View.ui.swBluetooth);
         lv_group_set_editing(group, false);
     }
+
+    if (timer == nullptr)
+    {
+        timer = lv_timer_create(onTimerUpdate, 300, this);
+        lv_timer_ready(timer);
+    }
 }
 
 void Bluetooth::onViewWillDisappear()
@@ -80,6 +82,11 @@ void Bluetooth::onViewWillDisappear()
 
 void Bluetooth::onViewDidDisappear()
 {
+    if (timer)
+    {
+        lv_timer_del(timer);
+        timer = nullptr;
+    }
 }
 
 void Bluetooth::onViewUnload()
@@ -95,58 +102,82 @@ void Bluetooth::AttachEvent(lv_obj_t* obj)
     lv_obj_add_event_cb(obj, onEvent, LV_EVENT_ALL, this);
 }
 
-void Bluetooth::SetConnectedDevice(int index)
+void Bluetooth::TryStartScan()
 {
-    connectedDeviceIndex = index;
+    HAL::BluetoothInfo_t info = {};
+    HAL::Bluetooth_GetInfo(&info);
 
-    if (index < 0 || index >= 3)
+    if (info.enabled && !info.connected && !info.scanning)
     {
-        lv_label_set_text(View.ui.labelConnectedName, "No connected device");
-        lv_label_set_text(View.ui.labelConnectedInfo, "-");
-        return;
+        HAL::Bluetooth_StartScan(4000);
     }
-
-    lv_label_set_text(View.ui.labelConnectedName, kBluetoothDeviceNames[index]);
-    lv_label_set_text(View.ui.labelConnectedInfo, "Connected");
 }
 
-void Bluetooth::UpdateBluetoothState(bool isOn)
+void Bluetooth::RefreshUI()
 {
-    isBluetoothOn = isOn;
+    HAL::BluetoothInfo_t info = {};
+    HAL::Bluetooth_GetInfo(&info);
 
-    if (isOn)
+    if (info.enabled)
     {
         lv_obj_add_state(View.ui.swBluetooth, LV_STATE_CHECKED);
-        lv_label_set_text(View.ui.labelState, "On");
+        lv_label_set_text(View.ui.labelState, info.scanning ? "Scanning..." : "On");
         lv_obj_set_style_text_color(View.ui.labelState, lv_color_hex(0x4FA3FF), 0);
-
-        for (int i = 0; i < 3; i++)
-        {
-            lv_obj_clear_state(View.ui.btnDevice[i], LV_STATE_DISABLED);
-        }
-
-        if (connectedDeviceIndex >= 0)
-        {
-            SetConnectedDevice(connectedDeviceIndex);
-        }
-        else
-        {
-            SetConnectedDevice(-1);
-        }
     }
     else
     {
         lv_obj_clear_state(View.ui.swBluetooth, LV_STATE_CHECKED);
         lv_label_set_text(View.ui.labelState, "Off");
         lv_obj_set_style_text_color(View.ui.labelState, lv_color_hex(0x888888), 0);
+    }
 
+    if (info.connected)
+    {
+        lv_label_set_text(View.ui.labelConnectedName, info.connectedName[0] ? info.connectedName : "Connected Device");
+        lv_label_set_text(View.ui.labelConnectedInfo, "Connected");
+    }
+    else
+    {
         lv_label_set_text(View.ui.labelConnectedName, "No connected device");
         lv_label_set_text(View.ui.labelConnectedInfo, "-");
+    }
 
-        for (int i = 0; i < 3; i++)
+    for (int i = 0; i < 3; i++)
+    {
+        if (!info.enabled)
         {
             lv_obj_add_state(View.ui.btnDevice[i], LV_STATE_DISABLED);
+            lv_label_set_text(View.ui.labelDevice[i], "-");
+            continue;
         }
+
+        lv_obj_clear_state(View.ui.btnDevice[i], LV_STATE_DISABLED);
+
+        if (i < info.deviceCount)
+        {
+            lv_label_set_text(View.ui.labelDevice[i], info.devices[i].name[0] ? info.devices[i].name : info.devices[i].address);
+        }
+        else
+        {
+            lv_label_set_text(View.ui.labelDevice[i], info.scanning ? "Scanning..." : "-");
+            lv_obj_add_state(View.ui.btnDevice[i], LV_STATE_DISABLED);
+        }
+    }
+}
+
+void Bluetooth::onTimerUpdate(lv_timer_t* timer)
+{
+    Bluetooth* instance = (Bluetooth*)timer->user_data;
+    if (!instance) return;
+
+    instance->RefreshUI();
+
+    HAL::BluetoothInfo_t info = {};
+    HAL::Bluetooth_GetInfo(&info);
+
+    if (info.enabled && !info.connected && !info.scanning && info.deviceCount == 0)
+    {
+        HAL::Bluetooth_StartScan(4000);
     }
 }
 
@@ -178,19 +209,26 @@ void Bluetooth::onEvent(lv_event_t* event)
 
             if (obj == instance->View.ui.swBluetooth)
             {
-                instance->UpdateBluetoothState(!instance->isBluetoothOn);
+                HAL::BluetoothInfo_t info = {};
+                HAL::Bluetooth_GetInfo(&info);
+
+                HAL::Bluetooth_Enable(!info.enabled);
+                if (!info.enabled)
+                {
+                    HAL::Bluetooth_StartScan(4000);
+                }
+
+                instance->RefreshUI();
                 return;
             }
 
-            if (instance->isBluetoothOn)
+            for (int i = 0; i < 3; i++)
             {
-                for (int i = 0; i < 3; i++)
+                if (obj == instance->View.ui.btnDevice[i])
                 {
-                    if (obj == instance->View.ui.btnDevice[i])
-                    {
-                        instance->SetConnectedDevice(i);
-                        return;
-                    }
+                    HAL::Bluetooth_Connect(i);
+                    instance->RefreshUI();
+                    return;
                 }
             }
         }
@@ -206,19 +244,26 @@ void Bluetooth::onEvent(lv_event_t* event)
 
         if (obj == instance->View.ui.swBluetooth)
         {
-            instance->UpdateBluetoothState(!instance->isBluetoothOn);
+            HAL::BluetoothInfo_t info = {};
+            HAL::Bluetooth_GetInfo(&info);
+
+            HAL::Bluetooth_Enable(!info.enabled);
+            if (!info.enabled)
+            {
+                HAL::Bluetooth_StartScan(4000);
+            }
+
+            instance->RefreshUI();
             return;
         }
 
-        if (instance->isBluetoothOn)
+        for (int i = 0; i < 3; i++)
         {
-            for (int i = 0; i < 3; i++)
+            if (obj == instance->View.ui.btnDevice[i])
             {
-                if (obj == instance->View.ui.btnDevice[i])
-                {
-                    instance->SetConnectedDevice(i);
-                    return;
-                }
+                HAL::Bluetooth_Connect(i);
+                instance->RefreshUI();
+                return;
             }
         }
     }

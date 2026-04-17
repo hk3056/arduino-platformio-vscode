@@ -2,7 +2,7 @@
 #include "Version.h"
 #include "Wire.h"
 #include "MillisTaskManager/MillisTaskManager.h"
-
+#include "HAL_Bluetooth.h"
 static MillisTaskManager taskManager;
 
 #if CONFIG_SENSOR_ENABLE
@@ -80,7 +80,8 @@ void HAL::HAL_Init()
     Audio_Init();
     SD_Init();
     Display_Init();
-
+    Bluetooth_Init();
+    taskManager.Register(Bluetooth_Update, 100);
     taskManager.Register(Power_EventMonitor, 100);
     taskManager.Register(GPS_Update, 200);
     taskManager.Register(SD_Update, 500);

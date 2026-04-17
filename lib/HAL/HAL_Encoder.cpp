@@ -1,5 +1,6 @@
 #include "HAL.h"
 #include "ButtonEvent/ButtonEvent.h"
+#include <Arduino.h>
 
 static ButtonEvent KeyUp(300);
 static ButtonEvent KeyDown(300);
@@ -10,17 +11,54 @@ static bool EncoderEnable = true;
 static volatile int32_t EncoderDiff = 0;
 static volatile bool EncoderPush = false;
 
-static uint8_t BacklightLevelIndex = 3;
+static uint8_t BacklightLevelIndex = 3; // 4档亮度：关、低、中、高
+static const uint16_t BacklightLevelTable[4] = { 0, 256, 614, 1023 };
 
-// 4档亮度：关、低、中、高
-static const uint16_t BacklightLevelTable[4] = {
-    0,
-    256,
-    614,
-    1023
-};
+static const uint32_t KEY_DEBOUNCE_MS = 25;
 
 portMUX_TYPE kmux = portMUX_INITIALIZER_UNLOCKED;
+
+typedef struct
+{
+    uint8_t pin;
+    bool lastRawPressed;
+    bool stablePressed;
+    uint32_t lastChangeTick;
+} KeyDebounce_t;
+
+static KeyDebounce_t DebounceUp;
+static KeyDebounce_t DebounceDown;
+static KeyDebounce_t DebounceOk;
+static KeyDebounce_t DebounceBacklight;
+
+static void KeyDebounce_Init(KeyDebounce_t* key, uint8_t pin)
+{
+    key->pin = pin;
+
+    // INPUT_PULLUP: 松开=HIGH, 按下=LOW
+    bool pressed = (digitalRead(pin) == LOW);
+    key->lastRawPressed = pressed;
+    key->stablePressed = pressed;
+    key->lastChangeTick = millis();
+}
+
+static bool KeyDebounce_Update(KeyDebounce_t* key)
+{
+    bool rawPressed = (digitalRead(key->pin) == LOW);
+
+    if (rawPressed != key->lastRawPressed)
+    {
+        key->lastRawPressed = rawPressed;
+        key->lastChangeTick = millis();
+    }
+
+    if ((millis() - key->lastChangeTick) >= KEY_DEBOUNCE_MS)
+    {
+        key->stablePressed = key->lastRawPressed;
+    }
+
+    return key->stablePressed;
+}
 
 /**
  * @brief 上键事件处理：模拟编码器逆时针
@@ -30,13 +68,11 @@ static void KeyUp_Handler(ButtonEvent* btn, int event)
     (void)btn;
 
     portENTER_CRITICAL(&kmux);
-
-    if(EncoderEnable && event == ButtonEvent::EVENT_PRESSED)
+    if (EncoderEnable && event == ButtonEvent::EVENT_PRESSED)
     {
         EncoderDiff = -1;
         HAL::Buzz_Tone(1800, 5);
     }
-
     portEXIT_CRITICAL(&kmux);
 }
 
@@ -48,13 +84,11 @@ static void KeyDown_Handler(ButtonEvent* btn, int event)
     (void)btn;
 
     portENTER_CRITICAL(&kmux);
-
-    if(EncoderEnable && event == ButtonEvent::EVENT_PRESSED)
+    if (EncoderEnable && event == ButtonEvent::EVENT_PRESSED)
     {
         EncoderDiff = 1;
         HAL::Buzz_Tone(2000, 5);
     }
-
     portEXIT_CRITICAL(&kmux);
 }
 
@@ -66,23 +100,21 @@ static void KeyOk_Handler(ButtonEvent* btn, int event)
     (void)btn;
 
     portENTER_CRITICAL(&kmux);
-
-    if(!EncoderEnable)
+    if (!EncoderEnable)
     {
         portEXIT_CRITICAL(&kmux);
         return;
     }
 
-    if(event == ButtonEvent::EVENT_PRESSED)
+    if (event == ButtonEvent::EVENT_PRESSED)
     {
         EncoderPush = true;
         HAL::Buzz_Tone(2200, 5);
     }
-    else if(event == ButtonEvent::EVENT_RELEASED)
+    else if (event == ButtonEvent::EVENT_RELEASED)
     {
         EncoderPush = false;
     }
-
     portEXIT_CRITICAL(&kmux);
 }
 
@@ -93,18 +125,15 @@ static void KeyBacklight_Handler(ButtonEvent* btn, int event)
 {
     (void)btn;
 
-    if(event == ButtonEvent::EVENT_PRESSED)
+    if (event == ButtonEvent::EVENT_PRESSED)
     {
         portENTER_CRITICAL(&kmux);
-
         BacklightLevelIndex++;
-        if(BacklightLevelIndex >= 4)
+        if (BacklightLevelIndex >= 4)
         {
             BacklightLevelIndex = 0;
         }
-
         uint16_t level = BacklightLevelTable[BacklightLevelIndex];
-
         portEXIT_CRITICAL(&kmux);
 
         HAL::Backlight_SetValue(level);
@@ -122,6 +151,11 @@ void HAL::Encoder_Init()
     pinMode(CONFIG_KEY_OK_PIN, INPUT_PULLUP);
     pinMode(CONFIG_KEY_BACKLIGHT_PIN, INPUT_PULLUP);
 
+    KeyDebounce_Init(&DebounceUp, CONFIG_KEY_UP_PIN);
+    KeyDebounce_Init(&DebounceDown, CONFIG_KEY_DOWN_PIN);
+    KeyDebounce_Init(&DebounceOk, CONFIG_KEY_OK_PIN);
+    KeyDebounce_Init(&DebounceBacklight, CONFIG_KEY_BACKLIGHT_PIN);
+
     KeyUp.EventAttach(KeyUp_Handler);
     KeyDown.EventAttach(KeyDown_Handler);
     KeyOk.EventAttach(KeyOk_Handler);
@@ -136,11 +170,12 @@ void HAL::Encoder_Init()
  */
 void HAL::Encoder_Update()
 {
-    KeyUp.EventMonitor(digitalRead(CONFIG_KEY_UP_PIN) == LOW);
-    KeyDown.EventMonitor(digitalRead(CONFIG_KEY_DOWN_PIN) == LOW);
-    KeyOk.EventMonitor(digitalRead(CONFIG_KEY_OK_PIN) == LOW);
-    KeyBacklight.EventMonitor(digitalRead(CONFIG_KEY_BACKLIGHT_PIN) == LOW);
+    KeyUp.EventMonitor(KeyDebounce_Update(&DebounceUp));
+    KeyDown.EventMonitor(KeyDebounce_Update(&DebounceDown));
+    KeyOk.EventMonitor(KeyDebounce_Update(&DebounceOk));
+    KeyBacklight.EventMonitor(KeyDebounce_Update(&DebounceBacklight));
 }
+
 /**
  * @brief 获取方向增量
  * 上键返回 -1，下键返回 +1
@@ -159,11 +194,10 @@ int32_t HAL::Encoder_GetDiff()
  */
 bool HAL::Encoder_GetIsPush()
 {
-    if(!EncoderEnable)
+    if (!EncoderEnable)
     {
         return false;
     }
-
     return EncoderPush;
 }
 
@@ -173,14 +207,11 @@ bool HAL::Encoder_GetIsPush()
 void HAL::Encoder_SetEnable(bool en)
 {
     portENTER_CRITICAL(&kmux);
-
     EncoderEnable = en;
-
-    if(!en)
+    if (!en)
     {
         EncoderPush = false;
         EncoderDiff = 0;
     }
-
     portEXIT_CRITICAL(&kmux);
 }
