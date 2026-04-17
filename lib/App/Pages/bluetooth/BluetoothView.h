@@ -15,7 +15,23 @@ public:
     struct
     {
         lv_obj_t* labelTitle;
-        lv_obj_t* labelHint;
+
+        lv_obj_t* swBluetooth;
+        lv_obj_t* labelState;
+
+        lv_obj_t* contConnected;
+        lv_obj_t* labelConnectedTitle;
+        lv_obj_t* labelConnectedName;
+        lv_obj_t* labelConnectedInfo;
+
+        lv_obj_t* labelAvailableTitle;
+        lv_obj_t* contAvailable;
+
+        lv_obj_t* btnDevice[3];
+        lv_obj_t* labelDevice[3];
+
+        lv_obj_t* btnExit;
+        lv_obj_t* labelExit;
     } ui;
 };
 
