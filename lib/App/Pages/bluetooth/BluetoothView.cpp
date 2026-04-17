@@ -75,34 +75,16 @@ void BluetoothView::Create(lv_obj_t* root)
     lv_obj_set_style_radius(cont, 18, 0);
     lv_obj_set_style_border_width(cont, 0, 0);
     lv_obj_set_style_bg_color(cont, lv_color_hex(0x2A2A2A), 0);
-    lv_obj_clear_flag(cont, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(cont, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(cont, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_set_flex_flow(cont, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(cont, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
+    lv_obj_set_style_pad_top(cont, 8, 0);
+    lv_obj_set_style_pad_bottom(cont, 8, 0);
+    lv_obj_set_style_pad_left(cont, 8, 0);
+    lv_obj_set_style_pad_right(cont, 8, 0);
+    lv_obj_set_style_pad_row(cont, 8, 0);
     ui.contAvailable = cont;
-
-    static const char* deviceNames[3] =
-    {
-        "Device A",
-        "Device B",
-        "Device C"
-    };
-
-    for (int i = 0; i < 3; i++)
-    {
-        lv_obj_t* btn = lv_btn_create(cont);
-        lv_obj_set_size(btn, 190, 26);
-        lv_obj_align(btn, LV_ALIGN_TOP_MID, 0, 8 + i * 34);
-        lv_obj_set_style_radius(btn, 10, 0);
-        lv_obj_set_style_border_width(btn, 0, 0);
-        lv_obj_set_style_bg_color(btn, lv_color_hex(0x3A3A3A), 0);
-        lv_obj_set_style_bg_color(btn, lv_color_hex(0x4FA3FF), LV_STATE_FOCUSED);
-        ui.btnDevice[i] = btn;
-
-        label = lv_label_create(btn);
-        lv_obj_set_style_text_font(label, ResourcePool::GetFont("bahnschrift_17"), 0);
-        lv_obj_set_style_text_color(label, lv_color_white(), 0);
-        lv_label_set_text(label, deviceNames[i]);
-        lv_obj_align(label, LV_ALIGN_LEFT_MID, 12, 0);
-        ui.labelDevice[i] = label;
-    }
 
     /* Exit button */
     lv_obj_t* btn = lv_btn_create(root);

@@ -27,9 +27,6 @@ public:
         lv_obj_t* labelAvailableTitle;
         lv_obj_t* contAvailable;
 
-        lv_obj_t* btnDevice[3];
-        lv_obj_t* labelDevice[3];
-
         lv_obj_t* btnExit;
         lv_obj_t* labelExit;
     } ui;
