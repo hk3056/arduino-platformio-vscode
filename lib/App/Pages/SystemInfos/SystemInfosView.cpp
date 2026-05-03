@@ -190,11 +190,24 @@ void SystemInfosView::SetScrollToY(lv_obj_t* obj, lv_coord_t y, lv_anim_enable_t
 void SystemInfosView::onFocus(lv_group_t* g)
 {
     lv_obj_t* icon = lv_group_get_focused(g);
+    if (!icon) {
+        // 焦点丢失，强制移动到组内第一个对象
+        lv_group_focus_next(g); // 从空焦点跳转到下一个（即第一个）
+        icon = lv_group_get_focused(g);
+    }
+    if (!icon) return;
+
     lv_obj_t* cont = lv_obj_get_parent(icon);
+    if (!cont) return;
     lv_coord_t y = lv_obj_get_y(cont);
     lv_obj_scroll_to_y(lv_obj_get_parent(cont), y, LV_ANIM_ON);
 }
 
+// 新增 createGroup 实现（调用私有 Group_Init，因为它是本类的成员）
+void SystemInfosView::createGroup()
+{
+    Group_Init();   // 清空组 → 重新添加图标 → 聚焦第一个
+}
 void SystemInfosView::Style_Init()
 {
     lv_style_init(&style.icon);

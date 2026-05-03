@@ -1,203 +1,165 @@
 #include "Bluetooth.h"
 #include "HAL_Bluetooth.h"
+#include <string>
 
 using namespace Page;
 
-Bluetooth::Bluetooth()
-{
+Bluetooth::Bluetooth() {
     timer = nullptr;
     deviceBtnCount = 0;
-
-    for (int i = 0; i < MAX_VISIBLE_DEVICES; i++)
-    {
-        btnDevice[i] = nullptr;
+    lastDeviceListStr = "";
+    for (int i = 0; i < MAX_VISIBLE_DEVICES; i++) {
+        btnDevice[i]   = nullptr;
         labelDevice[i] = nullptr;
     }
 }
 
-Bluetooth::~Bluetooth()
-{
-}
+Bluetooth::~Bluetooth() {}
 
-void Bluetooth::onCustomAttrConfig()
-{
+void Bluetooth::onCustomAttrConfig() {
     SetCustomCacheEnable(false);
 }
 
-void Bluetooth::onViewLoad()
-{
+void Bluetooth::onViewLoad() {
     View.Create(_root);
-
     AttachEvent(_root);
     AttachEvent(View.ui.swBluetooth);
     AttachEvent(View.ui.btnExit);
-
     RefreshUI();
 }
 
-void Bluetooth::onViewDidLoad()
-{
-}
+void Bluetooth::onViewDidLoad() {}
 
-void Bluetooth::onViewWillAppear()
-{
+void Bluetooth::onViewWillAppear() {
     lv_obj_clear_flag(_root, LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_style_bg_opa(_root, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_bg_color(_root, lv_color_black(), LV_PART_MAIN);
 
     lv_indev_t* indev = lv_indev_get_act();
-    if (indev)
-    {
-        lv_indev_wait_release(indev);
-    }
+    if (indev) lv_indev_wait_release(indev);
 
-    TryStartScan();
     RefreshUI();
 }
 
-void Bluetooth::onViewDidAppear()
-{
+void Bluetooth::onViewDidAppear() {
+    lv_group_t* defGroup = lv_group_get_default();
+    if (defGroup) {
+        lv_group_remove_all_objs(defGroup);
+    }
+
     RebuildGroup();
 
-    if (timer == nullptr)
-    {
+    if (timer == nullptr) {
         timer = lv_timer_create(onTimerUpdate, 300, this);
-        lv_timer_ready(timer);
+        if (timer) {
+            lv_timer_ready(timer);
+        }
     }
 }
 
 void Bluetooth::onViewWillDisappear()
 {
-    lv_indev_t* indev = lv_indev_get_act();
-    if (indev)
-    {
-        lv_indev_wait_release(indev);
-    }
-
-    lv_obj_add_flag(_root, LV_OBJ_FLAG_HIDDEN);
-}
-
-void Bluetooth::onViewDidDisappear()
-{
-    if (timer)
-    {
+    HAL::Bluetooth_StopScan();
+    if (timer) {
         lv_timer_del(timer);
         timer = nullptr;
     }
 
     lv_group_t* group = lv_group_get_default();
-    if (group)
-    {
+    if (group) {
         lv_group_remove_obj(View.ui.swBluetooth);
-
-        for (int i = 0; i < deviceBtnCount; i++)
-        {
-            if (btnDevice[i])
-            {
-                lv_group_remove_obj(btnDevice[i]);
-            }
+        for (int i = 0; i < deviceBtnCount; i++) {
+            if (btnDevice[i]) lv_group_remove_obj(btnDevice[i]);
         }
-
         lv_group_remove_obj(View.ui.btnExit);
-    }
-}
 
-void Bluetooth::onViewUnload()
-{
+        lv_group_focus_next(group);   // 焦点安全转移，但可能为空，不过菜单会自己修复
+    }
+
+    lv_indev_t* indev = lv_indev_get_act();
+    if (indev) lv_indev_wait_release(indev);
+    lv_obj_add_flag(_root, LV_OBJ_FLAG_HIDDEN);
+}
+void Bluetooth::onViewDidDisappear() {
+    // 无需任何操作
+}
+void Bluetooth::onViewUnload() {
     lv_obj_clean(_root);
 }
 
-void Bluetooth::onViewDidUnload()
-{
-}
+void Bluetooth::onViewDidUnload() {}
 
-void Bluetooth::AttachEvent(lv_obj_t* obj)
-{
+void Bluetooth::AttachEvent(lv_obj_t* obj) {
     lv_obj_add_event_cb(obj, onEvent, LV_EVENT_ALL, this);
 }
 
-void Bluetooth::TryStartScan()
-{
+void Bluetooth::TryStartScan() {
     HAL::BluetoothInfo_t info = {};
     HAL::Bluetooth_GetInfo(&info);
-
-    if (info.enabled && !info.connected && !info.scanning)
-    {
+    if (info.enabled && !info.connected && !info.scanning) {
         HAL::Bluetooth_StartScan(4000);
     }
 }
 
-void Bluetooth::RebuildGroup()
-{
+void Bluetooth::RebuildGroup() {
     lv_group_t* group = lv_group_get_default();
-    if (!group)
-    {
-        return;
-    }
-
-    lv_group_remove_obj(View.ui.swBluetooth);
-    lv_group_remove_obj(View.ui.btnExit);
-
-    for (int i = 0; i < deviceBtnCount; i++)
-    {
-        if (btnDevice[i])
-        {
-            lv_group_remove_obj(btnDevice[i]);
-        }
-    }
+    if (!group) return;
 
     lv_group_add_obj(group, View.ui.swBluetooth);
-
-    for (int i = 0; i < deviceBtnCount; i++)
-    {
-        if (btnDevice[i] && !lv_obj_has_state(btnDevice[i], LV_STATE_DISABLED))
-        {
+    for (int i = 0; i < deviceBtnCount; i++) {
+        if (btnDevice[i] && !lv_obj_has_state(btnDevice[i], LV_STATE_DISABLED)) {
             lv_group_add_obj(group, btnDevice[i]);
         }
     }
-
     lv_group_add_obj(group, View.ui.btnExit);
 
-    if (deviceBtnCount > 0 && btnDevice[0] && !lv_obj_has_state(btnDevice[0], LV_STATE_DISABLED))
-    {
+    if (deviceBtnCount > 0 && btnDevice[0] &&
+        !lv_obj_has_state(btnDevice[0], LV_STATE_DISABLED)) {
         lv_group_focus_obj(btnDevice[0]);
-    }
-    else
-    {
+    } else {
         lv_group_focus_obj(View.ui.swBluetooth);
     }
-
     lv_group_set_editing(group, false);
 }
 
-void Bluetooth::RebuildDeviceList(const HAL::BluetoothInfo_t& info)
-{
-    lv_obj_clean(View.ui.contAvailable);
+static std::string MakeDeviceListDigest(const HAL::BluetoothInfo_t& info) {
+    std::string result;
+    if (!info.enabled) {
+        result = "OFF";
+    } else if (info.deviceCount == 0) {
+        result = info.scanning ? "SCAN" : "NO_DEV";
+    } else {
+        for (int i = 0; i < info.deviceCount; i++) {
+            result += info.devices[i].address;
+            result += ",";
+        }
+    }
+    if (info.connected) {
+        result += "|CON:";
+        result += info.connectedAddress;
+    }
+    return result;
+}
 
-    for (int i = 0; i < MAX_VISIBLE_DEVICES; i++)
-    {
-        btnDevice[i] = nullptr;
+void Bluetooth::RebuildDeviceList(const HAL::BluetoothInfo_t& info) {
+    lv_obj_clean(View.ui.contAvailable);
+    for (int i = 0; i < MAX_VISIBLE_DEVICES; i++) {
+        btnDevice[i]   = nullptr;
         labelDevice[i] = nullptr;
     }
     deviceBtnCount = 0;
 
     uint8_t count = 0;
-
-    if (!info.enabled)
-    {
+    if (!info.enabled) {
         count = 1;
-    }
-    else if (info.deviceCount == 0)
-    {
+    } else if (info.deviceCount == 0) {
         count = 1;
-    }
-    else
-    {
-        count = info.deviceCount > MAX_VISIBLE_DEVICES ? MAX_VISIBLE_DEVICES : info.deviceCount;
+    } else {
+        count = info.deviceCount > MAX_VISIBLE_DEVICES
+                    ? MAX_VISIBLE_DEVICES : info.deviceCount;
     }
 
-    for (int i = 0; i < count; i++)
-    {
+    for (int i = 0; i < count; i++) {
         lv_obj_t* btn = lv_btn_create(View.ui.contAvailable);
         lv_obj_set_width(btn, 190);
         lv_obj_set_height(btn, 28);
@@ -208,76 +170,75 @@ void Bluetooth::RebuildDeviceList(const HAL::BluetoothInfo_t& info)
         btnDevice[i] = btn;
 
         lv_obj_t* label = lv_label_create(btn);
-        lv_obj_set_style_text_font(label, ResourcePool::GetFont("bahnschrift_17"), 0);
+        lv_obj_set_style_text_font(label,
+            ResourcePool::GetFont("bahnschrift_17"), 0);
         lv_obj_set_style_text_color(label, lv_color_white(), 0);
 
-        if (!info.enabled)
-        {
+        if (!info.enabled) {
             lv_label_set_text(label, "Bluetooth Off");
             lv_obj_add_state(btn, LV_STATE_DISABLED);
-        }
-        else if (info.deviceCount == 0)
-        {
-            lv_label_set_text(label, info.scanning ? "Scanning..." : "No Devices");
+        } else if (info.deviceCount == 0) {
+            lv_label_set_text(label,
+                info.scanning ? "Scanning..." : "No Devices");
             lv_obj_add_state(btn, LV_STATE_DISABLED);
-        }
-        else
-        {
-            lv_label_set_text(
-                label,
-                info.devices[i].name[0] ? info.devices[i].name : info.devices[i].address
-            );
+        } else {
+            lv_label_set_text(label,
+                info.devices[i].name[0] ? info.devices[i].name
+                                        : info.devices[i].address);
         }
 
         lv_obj_align(label, LV_ALIGN_LEFT_MID, 12, 0);
         labelDevice[i] = label;
         AttachEvent(btn);
     }
-
     deviceBtnCount = count;
+
+    lv_group_t* group = lv_group_get_default();
+    if (group) {
+        lv_group_remove_all_objs(group);
+    }
     RebuildGroup();
 }
 
-void Bluetooth::RefreshUI()
-{
+void Bluetooth::RefreshUI() {
     HAL::BluetoothInfo_t info = {};
     HAL::Bluetooth_GetInfo(&info);
 
-    if (info.enabled)
-    {
+    if (info.enabled) {
         lv_obj_add_state(View.ui.swBluetooth, LV_STATE_CHECKED);
-        lv_label_set_text(View.ui.labelState, info.scanning ? "Scanning..." : "On");
-        lv_obj_set_style_text_color(View.ui.labelState, lv_color_hex(0x4FA3FF), 0);
-    }
-    else
-    {
+        lv_label_set_text(View.ui.labelState,
+            info.scanning ? "Scanning..." : "On");
+        lv_obj_set_style_text_color(View.ui.labelState,
+            lv_color_hex(0x4FA3FF), 0);
+    } else {
         lv_obj_clear_state(View.ui.swBluetooth, LV_STATE_CHECKED);
         lv_label_set_text(View.ui.labelState, "Off");
-        lv_obj_set_style_text_color(View.ui.labelState, lv_color_hex(0x888888), 0);
+        lv_obj_set_style_text_color(View.ui.labelState,
+            lv_color_hex(0x888888), 0);
     }
 
-    if (info.connected)
-    {
-        lv_label_set_text(
-            View.ui.labelConnectedName,
-            info.connectedName[0] ? info.connectedName : "Connected Device"
-        );
+    if (info.connected) {
+        lv_label_set_text(View.ui.labelConnectedName,
+            info.connectedName[0] ? info.connectedName : "Connected Device");
         lv_label_set_text(View.ui.labelConnectedInfo, "Connected");
-    }
-    else
-    {
+    } else {
         lv_label_set_text(View.ui.labelConnectedName, "No connected device");
         lv_label_set_text(View.ui.labelConnectedInfo, "-");
     }
 
-    RebuildDeviceList(info);
+    std::string currentDigest = MakeDeviceListDigest(info);
+    if (currentDigest != lastDeviceListStr) {
+        lastDeviceListStr = currentDigest;
+        RebuildDeviceList(info);
+    }
 }
 
-void Bluetooth::onTimerUpdate(lv_timer_t* timer)
-{
+void Bluetooth::onTimerUpdate(lv_timer_t* timer) {
     Bluetooth* instance = (Bluetooth*)timer->user_data;
-    if (!instance)
-    {
+    if (!instance) return;
+
+    // 安全保护：如果页面已经隐藏，不再执行任何操作
+    if (lv_obj_has_flag(instance->_root, LV_OBJ_FLAG_HIDDEN)) {
         return;
     }
 
@@ -285,58 +246,39 @@ void Bluetooth::onTimerUpdate(lv_timer_t* timer)
 
     HAL::BluetoothInfo_t info = {};
     HAL::Bluetooth_GetInfo(&info);
-
-    if (info.enabled && !info.connected && !info.scanning && info.deviceCount == 0)
-    {
+    if (info.enabled && !info.connected && !info.scanning &&
+        info.deviceCount == 0) {
         HAL::Bluetooth_StartScan(4000);
     }
 }
 
-void Bluetooth::onEvent(lv_event_t* event)
-{
+void Bluetooth::onEvent(lv_event_t* event) {
     Bluetooth* instance = (Bluetooth*)lv_event_get_user_data(event);
     LV_ASSERT_NULL(instance);
 
     lv_obj_t* obj = lv_event_get_current_target(event);
     lv_event_code_t code = lv_event_get_code(event);
 
-    if (code == LV_EVENT_KEY)
-    {
+    if (code == LV_EVENT_KEY) {
         uint32_t key = lv_event_get_key(event);
-
-        if (key == LV_KEY_ESC)
-        {
+        if (key == LV_KEY_ESC) {
             instance->_Manager->Pop();
             return;
         }
-
-        if (key == LV_KEY_ENTER)
-        {
-            if (obj == instance->View.ui.btnExit)
-            {
+        if (key == LV_KEY_ENTER) {
+            if (obj == instance->View.ui.btnExit) {
                 instance->_Manager->Pop();
                 return;
             }
-
-            if (obj == instance->View.ui.swBluetooth)
-            {
+            if (obj == instance->View.ui.swBluetooth) {
                 HAL::BluetoothInfo_t info = {};
                 HAL::Bluetooth_GetInfo(&info);
-
                 HAL::Bluetooth_Enable(!info.enabled);
-                if (!info.enabled)
-                {
-                    HAL::Bluetooth_StartScan(4000);
-                }
-
                 instance->RefreshUI();
                 return;
             }
-
-            for (int i = 0; i < instance->deviceBtnCount; i++)
-            {
-                if (obj == instance->btnDevice[i])
-                {
+            for (int i = 0; i < instance->deviceBtnCount; i++) {
+                if (obj == instance->btnDevice[i]) {
                     HAL::Bluetooth_Connect(i);
                     instance->RefreshUI();
                     return;
@@ -345,33 +287,20 @@ void Bluetooth::onEvent(lv_event_t* event)
         }
     }
 
-    if (code == LV_EVENT_SHORT_CLICKED || code == LV_EVENT_CLICKED)
-    {
-        if (obj == instance->View.ui.btnExit)
-        {
+    if (code == LV_EVENT_SHORT_CLICKED || code == LV_EVENT_CLICKED) {
+        if (obj == instance->View.ui.btnExit) {
             instance->_Manager->Pop();
             return;
         }
-
-        if (obj == instance->View.ui.swBluetooth)
-        {
+        if (obj == instance->View.ui.swBluetooth) {
             HAL::BluetoothInfo_t info = {};
             HAL::Bluetooth_GetInfo(&info);
-
             HAL::Bluetooth_Enable(!info.enabled);
-            if (!info.enabled)
-            {
-                HAL::Bluetooth_StartScan(4000);
-            }
-
             instance->RefreshUI();
             return;
         }
-
-        for (int i = 0; i < instance->deviceBtnCount; i++)
-        {
-            if (obj == instance->btnDevice[i])
-            {
+        for (int i = 0; i < instance->deviceBtnCount; i++) {
+            if (obj == instance->btnDevice[i]) {
                 HAL::Bluetooth_Connect(i);
                 instance->RefreshUI();
                 return;

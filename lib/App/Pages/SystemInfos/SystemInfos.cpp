@@ -44,19 +44,14 @@ void SystemInfos::onViewWillAppear()
 {
     Serial.println("SystemInfos::onViewWillAppear enter");
 
-    Model.SetStatusBarStyle(DataProc::STATUS_BAR_STYLE_BLACK);
+    // 强制重建焦点组，彻底清除蓝牙页面的残留
+    View.createGroup();
 
-    // 等待打开菜单时那一下按键释放，避免刚进页面就误触发
+    // 绑定输入设备到当前组（如果编译报错 'lv_indev_set_group'，删除下面四行）
     lv_indev_t* indev = lv_indev_get_act();
-    if (indev)
-    {
-        lv_indev_wait_release(indev);
+    if (indev) {
+        lv_indev_set_group(indev, lv_group_get_default());
     }
-
-    s_enterTick = lv_tick_get();
-
-    // 先刷新一次数据
-    Update();
 
     Serial.println("SystemInfos::onViewWillAppear exit");
 }
@@ -66,9 +61,8 @@ void SystemInfos::onViewDidAppear()
     Serial.println("SystemInfos::onViewDidAppear");
 
     lv_group_t* group = lv_group_get_default();
-    if (group)
-    {
-        View.onFocus(group);
+    if (group) {
+        View.onFocus(group);   // 内部已处理焦点为空的情况，负责滚动
     }
 }
 
