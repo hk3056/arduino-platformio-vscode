@@ -2,25 +2,30 @@
 #define __HAL_BLUETOOTH_H
 
 #include "HAL.h"
+#include <Arduino.h>
 #include <NimBLEDevice.h>
+#include <string>
 
 namespace HAL {
 
-// ---------- 数据结构 ----------
+#define HAL_BT_MAX_DEVICES 8
+
 struct BluetoothDeviceItem_t {
-    char    name[40];
-    char    address[24];
-    int     rssi;
+    char name[40];
+    char address[24];
+    int rssi;
 };
 
 struct BluetoothInfo_t {
-    bool    enabled;
-    bool    scanning;
-    bool    connected;
-    char    connectedName[40];
-    char    connectedAddress[24];
+    bool enabled;
+    bool scanning;
+    bool connected;
+
+    char connectedName[40];
+    char connectedAddress[24];
+
     uint8_t deviceCount;
-    BluetoothDeviceItem_t devices[8];
+    BluetoothDeviceItem_t devices[HAL_BT_MAX_DEVICES];
 };
 
 // ---------- 基础管理 ----------
@@ -41,18 +46,27 @@ void Bluetooth_Disconnect();
 bool Bluetooth_DiscoverServices();
 void Bluetooth_ClearServices();
 
-// ---------- 数据读写 (使用已知UUID) ----------
-bool Bluetooth_ReadCharacteristic(const char* serviceUUID,
-                                  const char* charUUID,
-                                  std::string& outValue);
-bool Bluetooth_WriteCharacteristic(const char* serviceUUID,
-                                   const char* charUUID,
-                                   const uint8_t* data, size_t len,
-                                   bool response = true);
-bool Bluetooth_SubscribeNotification(const char* serviceUUID,
-                                     const char* charUUID,
-                                     NimBLERemoteCharacteristic::notify_callback cb,
-                                     bool notifications = true);
+// ---------- 数据读写 ----------
+bool Bluetooth_ReadCharacteristic(
+    const char* serviceUUID,
+    const char* charUUID,
+    std::string& outValue
+);
+
+bool Bluetooth_WriteCharacteristic(
+    const char* serviceUUID,
+    const char* charUUID,
+    const uint8_t* data,
+    size_t len,
+    bool response = true
+);
+
+bool Bluetooth_SubscribeNotification(
+    const char* serviceUUID,
+    const char* charUUID,
+    NimBLERemoteCharacteristic::notify_callback cb,
+    bool notifications = true
+);
 
 // ---------- 信息 ----------
 void Bluetooth_GetInfo(BluetoothInfo_t* info);

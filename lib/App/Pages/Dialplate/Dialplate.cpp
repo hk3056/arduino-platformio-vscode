@@ -38,7 +38,7 @@ void Dialplate::onViewWillAppear()
     lv_group_t* group = lv_group_get_default();
     LV_ASSERT_NULL(group);
 
-    lv_group_set_wrap(group, false);
+    lv_group_set_wrap(group, true);
 
     lv_group_add_obj(group, View.ui.btnCont.btnMap);
     lv_group_add_obj(group, View.ui.btnCont.btnRec);
@@ -218,21 +218,57 @@ void Dialplate::onEvent(lv_event_t* event)
     lv_obj_t* obj = lv_event_get_current_target(event);
     lv_event_code_t code = lv_event_get_code(event);
 
-
-    if (code == LV_EVENT_SHORT_CLICKED)
-    {
-        instance->onBtnClicked(obj);
-    }
-
+    // 开始键
     if (obj == instance->View.ui.btnCont.btnRec)
     {
         if (code == LV_EVENT_SHORT_CLICKED)
         {
-            instance->onRecord(false);
+            switch (instance->recState)
+            {
+            case RECORD_STATE_READY:
+                // 原来的开始记录逻辑写在 longPress == true 里面
+                // 所以这里主动传 true，用来启动记录
+                instance->onRecord(true);
+
+                // GPS 准备好并且记录成功启动后，再进入数据页面
+                if (instance->recState == RECORD_STATE_RUN)
+                {
+                    instance->_Manager->Push("Pages/RideData");
+                }
+                break;
+
+            case RECORD_STATE_RUN:
+                // 已经在记录中，点击开始键只进入数据页面，不暂停
+                instance->_Manager->Push("Pages/RideData");
+                break;
+
+            case RECORD_STATE_PAUSE:
+            case RECORD_STATE_STOP:
+                // 暂停/待停止状态下，点击恢复记录，然后进入数据页面
+                instance->onRecord(false);
+
+                if (instance->recState == RECORD_STATE_RUN)
+                {
+                    instance->_Manager->Push("Pages/RideData");
+                }
+                break;
+
+            default:
+                break;
+            }
         }
         else if (code == LV_EVENT_LONG_PRESSED)
         {
+            // 长按仍然保留原来的停止/确认停止逻辑
             instance->onRecord(true);
         }
+
+        return;
+    }
+
+    // 其他按钮：地图、菜单等保持原逻辑
+    if (code == LV_EVENT_SHORT_CLICKED)
+    {
+        instance->onBtnClicked(obj);
     }
 }
