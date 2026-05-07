@@ -9,11 +9,6 @@ using namespace Page;
 /*
  * ========= RideData 页面最终布局参数 =========
  *
- * 这版不再让每个格子自己画边框，
- * 而是：一个整体外框 + 分隔线。
- *
- * 如果后面还要微调，只改这里：
- *
  * UI_OFFSET_X:
  *   整体左右微调。正数往右，负数往左。
  *
@@ -21,18 +16,18 @@ using namespace Page;
  *   整体上下微调。正数往下，负数往上。
  *
  * UI_MARGIN_X:
- *   左右统一边距。越小越接近全屏，但太小会贴边。
+ *   左右统一边距。越小越接近全屏。
  *
  * UI_MARGIN_TOP:
  *   顶部边距。
  *
  * UI_MARGIN_BOTTOM:
- *   底部安全区。你的屏幕底部外壳会挡住内容，所以这里必须留大一点。
+ *   底部安全区。
  */
 #define UI_OFFSET_X          -10
 #define UI_OFFSET_Y          0
 
-#define UI_MARGIN_X         0
+#define UI_MARGIN_X          0
 #define UI_MARGIN_TOP        -1
 #define UI_MARGIN_BOTTOM     20
 
@@ -41,6 +36,15 @@ using namespace Page;
 
 #define GRID_COLOR           0x999999
 #define UNIT_RIGHT_INSET     20
+
+/*
+ * 顶部速度区左右两侧区域宽度。
+ * 左边“均速”和右边“最大”共用这个宽度，所以它们会对称。
+ *
+ * 想让均速/最大更靠近表盘：改小，比如 50
+ * 想让均速/最大离表盘远一点：改大，比如 60
+ */
+#define SPEED_SIDE_AREA_W    56
 
 static lv_obj_t* CreateSolidLine(
     lv_obj_t* parent,
@@ -189,17 +193,20 @@ void RideData::DeleteUI()
 void RideData::CreateSpeedPanel(lv_obj_t* parent)
 {
     const lv_coord_t fullW = LV_HOR_RES - UI_MARGIN_X * 2;
-    const lv_coord_t maxAreaW = 48;
+    const lv_coord_t sideAreaW = SPEED_SIDE_AREA_W;
+    const lv_coord_t centerAreaW = fullW - sideAreaW * 2;
 
     // 顶部速度区和时间区之间的横线
     CreateSolidLine(parent, 0, SPEED_PANEL_H, fullW, 1);
 
-    // MAX 区域竖线，只在速度区内显示
-    CreateSolidLine(parent, fullW - maxAreaW, 0, 1, SPEED_PANEL_H);
+    // 左右对称分隔线：左侧均速区 / 中间表盘区 / 右侧最大区
+    CreateSolidLine(parent, sideAreaW, 0, 1, SPEED_PANEL_H);
+    CreateSolidLine(parent, fullW - sideAreaW, 0, 1, SPEED_PANEL_H);
 
+    // ===== 中间时速表盘 =====
     ui.arcSpeed = lv_arc_create(parent);
     lv_obj_set_size(ui.arcSpeed, 102, 102);
-    lv_obj_set_pos(ui.arcSpeed, (fullW - 102) / 2 - 6, 6);
+    lv_obj_set_pos(ui.arcSpeed, sideAreaW + (centerAreaW - 102) / 2, 6);
     lv_arc_set_range(ui.arcSpeed, 0, 60);
     lv_arc_set_value(ui.arcSpeed, 0);
     lv_obj_remove_style(ui.arcSpeed, NULL, LV_PART_KNOB);
@@ -221,19 +228,25 @@ void RideData::CreateSpeedPanel(lv_obj_t* parent)
     lv_label_set_text(unit, "km/h");
     lv_obj_align_to(unit, ui.arcSpeed, LV_ALIGN_CENTER, 0, 28);
 
-    ui.labelMax = lv_label_create(parent);
-    lv_obj_set_style_text_font(ui.labelMax, ResourcePool::GetFont("bahnschrift_17"), 0);
-    lv_obj_set_style_text_color(ui.labelMax, lv_color_black(), 0);
-    lv_obj_set_width(ui.labelMax, maxAreaW - 6);
-    lv_obj_set_style_text_align(ui.labelMax, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_text(ui.labelMax, "最大\n0");
-    lv_obj_set_pos(ui.labelMax, fullW - maxAreaW + 3, 8);
-
+    // ===== 左侧：均速 =====
     ui.labelAvg = lv_label_create(parent);
     lv_obj_set_style_text_font(ui.labelAvg, &font_cn_18, 0);
-    lv_obj_set_style_text_color(ui.labelAvg, lv_color_hex(0x444444), 0);
-    lv_label_set_text(ui.labelAvg, "均速");
-    lv_obj_set_pos(ui.labelAvg, 16, SPEED_PANEL_H / 2 - 12);
+    lv_obj_set_style_text_color(ui.labelAvg, lv_color_black(), 0);
+    lv_obj_set_width(ui.labelAvg, sideAreaW - 6);
+    lv_obj_set_style_text_align(ui.labelAvg, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(ui.labelAvg, LV_LABEL_LONG_CLIP);
+    lv_label_set_text(ui.labelAvg, "均速\n0");
+    lv_obj_set_pos(ui.labelAvg, 3, SPEED_PANEL_H / 2 - 24);
+
+    // ===== 右侧：最大 =====
+    ui.labelMax = lv_label_create(parent);
+    lv_obj_set_style_text_font(ui.labelMax, &font_cn_18, 0);
+    lv_obj_set_style_text_color(ui.labelMax, lv_color_black(), 0);
+    lv_obj_set_width(ui.labelMax, sideAreaW - 6);
+    lv_obj_set_style_text_align(ui.labelMax, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(ui.labelMax, LV_LABEL_LONG_CLIP);
+    lv_label_set_text(ui.labelMax, "最大\n0");
+    lv_obj_set_pos(ui.labelMax, fullW - sideAreaW + 3, SPEED_PANEL_H / 2 - 24);
 }
 
 void RideData::CreateCells(lv_obj_t* parent)
@@ -410,7 +423,7 @@ int RideData::onDataEvent(Account* account, Account::EventParam_t* param)
 
 void RideData::Update()
 {
-    if (!ui.labelSpeed || !ui.arcSpeed || !ui.labelMax)
+    if (!ui.labelSpeed || !ui.arcSpeed || !ui.labelMax || !ui.labelAvg)
     {
         return;
     }
@@ -430,9 +443,25 @@ void RideData::Update()
         maxSpeed = 0;
     }
 
+    // 计算均速：singleDistance 单位按米处理，singleTime 单位按秒处理
+    int avgSpeed = 0;
+    if (sportStatusInfo.singleTime > 0 && sportStatusInfo.singleDistance > 0)
+    {
+        float avgKph = (sportStatusInfo.singleDistance * 3.6f) / sportStatusInfo.singleTime;
+        avgSpeed = (int)(avgKph + 0.5f);
+
+        if (avgSpeed < 0)
+        {
+            avgSpeed = 0;
+        }
+    }
+
     lv_label_set_text_fmt(ui.labelSpeed, "%d", speed);
     lv_arc_set_value(ui.arcSpeed, speed > 60 ? 60 : speed);
-    lv_label_set_text_fmt(ui.labelMax, "MAX\n%d", maxSpeed);
+
+    // 顶部左右对称显示：左均速，右最大
+    lv_label_set_text_fmt(ui.labelAvg, "均速\n%d", avgSpeed);
+    lv_label_set_text_fmt(ui.labelMax, "最大\n%d", maxSpeed);
 
     if (ui.cells[0].value)
     {
