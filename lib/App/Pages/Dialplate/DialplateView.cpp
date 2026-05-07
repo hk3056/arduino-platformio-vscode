@@ -99,7 +99,7 @@ void DialplateView::BottomInfo_Create(lv_obj_t* parent)
     {
          "均速",
          "时间",
-         "行程",
+         "距离",
          "热量"
     };
 

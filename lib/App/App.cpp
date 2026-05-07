@@ -100,6 +100,7 @@ void App_Init()
     manager.Install("SystemInfos", "Pages/SystemInfos");
     manager.Install("Startup",     "Pages/Startup");
     manager.Install("Bluetooth", "Pages/Bluetooth");
+    manager.Install("RideData", "Pages/RideData");
     manager.SetGlobalLoadAnimType(PageManager::LOAD_ANIM_OVER_TOP);
 
     manager.Push("Pages/Startup");
