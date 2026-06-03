@@ -538,34 +538,54 @@ void RideData::Update()
         }
         else
         {
-            lv_label_set_text(ui.cells[3].value, "---");
+            lv_label_set_text(ui.cells[3].value, "0");
         }
     }
 
     /*
-     * 踏频暂时保留原来的固定值。
      * 后面如果踏频 BLE 模块接好了，再把这里改成 Bluetooth_GetCadence()。
      */
-    if (ui.cells[4].value)
-{
     if (HAL::Bluetooth_IsCadenceValid())
-    {
-        uint16_t cadence = HAL::Bluetooth_GetCadenceRpm();
+{
+    uint16_t cadence = HAL::Bluetooth_GetCadenceRpm();
 
-        if (cadence > 0)
-        {
-            snprintf(buf, sizeof(buf), "%u", (unsigned int)cadence);
-            lv_label_set_text(ui.cells[4].value, buf);
-        }
-        else
-        {
-            lv_label_set_text(ui.cells[4].value, "---");
-        }
+    if (cadence > 0)
+    {
+        snprintf(buf, sizeof(buf), "%u", (unsigned int)cadence);
+        lv_label_set_text(ui.cells[4].value, buf);
     }
     else
     {
-        lv_label_set_text(ui.cells[4].value, "---");
+        lv_label_set_text(ui.cells[4].value, "0");
     }
+}
+else
+{
+    lv_label_set_text(ui.cells[4].value, "0");
+}
+
+/* 温度 */
+snprintf(buf, sizeof(buf), "%.0f", phtInfo.temperature);
+lv_label_set_text(ui.cells[5].value, buf);
+
+/* 心率 bpm：蓝牙心率模块 XTrack-HR */
+if (HAL::Bluetooth_IsHeartRateValid())
+{
+    uint8_t hr = HAL::Bluetooth_GetHeartRate();
+
+    if (hr > 0)
+    {
+        snprintf(buf, sizeof(buf), "%u", (unsigned int)hr);
+        lv_label_set_text(ui.cells[6].value, buf);
+    }
+    else
+    {
+        lv_label_set_text(ui.cells[6].value, "0");
+    }
+}
+else
+{
+    lv_label_set_text(ui.cells[6].value, "0");
 }
 
     if (ui.cells[5].value)
@@ -592,12 +612,12 @@ void RideData::Update()
             }
             else
             {
-                lv_label_set_text(ui.cells[6].value, "---");
+                lv_label_set_text(ui.cells[6].value, "0");
             }
         }
         else
         {
-            lv_label_set_text(ui.cells[6].value, "---");
+            lv_label_set_text(ui.cells[6].value, "0");
         }
     }
 }

@@ -1,14 +1,17 @@
 #include "Bluetooth.h"
 #include "HAL_Bluetooth.h"
 
-#include <string.h>
+#include <cstring>
+#include <string>
+#include <algorithm>
+#include <cctype>
 
 using namespace Page;
 
-/* 心率模块蓝牙名字 */
+
+
 static const char* HEART_RATE_DEVICE_NAME = "XTrack-HR";
 
-/* 踏频模块蓝牙名字 */
 static const char* CADENCE_DEVICE_NAME = "XTrack-CAD";
 
 static const uint32_t SCAN_INTERVAL_MS = 5000;
@@ -17,10 +20,8 @@ static const uint32_t SCAN_TIME_MS = 4000;
 Bluetooth::Bluetooth()
 {
     timer = nullptr;
-
     heartRateEnable = false;
     cadenceEnable = false;
-
     lastScanTick = 0;
 }
 
@@ -38,11 +39,15 @@ void Bluetooth::onViewLoad()
     View.Create(_root);
 
     AttachEvent(_root);
+
     AttachEvent(View.ui.swBluetooth);
+
     AttachEvent(View.ui.swHeartRate);
-    AttachEvent(View.ui.swCadence);
     AttachEvent(View.ui.btnHeartRateName);
+
+    AttachEvent(View.ui.swCadence);
     AttachEvent(View.ui.btnCadenceName);
+
     AttachEvent(View.ui.btnExit);
 
     RefreshUI();
@@ -55,11 +60,11 @@ void Bluetooth::onViewDidLoad()
 void Bluetooth::onViewWillAppear()
 {
     lv_obj_clear_flag(_root, LV_OBJ_FLAG_HIDDEN);
-
     lv_obj_set_style_bg_opa(_root, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_bg_color(_root, lv_color_hex(0x101010), LV_PART_MAIN);
 
     lv_indev_t* indev = lv_indev_get_act();
+
     if (indev)
     {
         lv_indev_wait_release(indev);
@@ -73,11 +78,13 @@ void Bluetooth::onViewWillAppear()
 void Bluetooth::onViewDidAppear()
 {
     BuildFocusGroup();
+
     TryStartScan();
 
     if (timer == nullptr)
     {
         timer = lv_timer_create(onTimerUpdate, 300, this);
+
         if (timer)
         {
             lv_timer_ready(timer);
@@ -98,6 +105,7 @@ void Bluetooth::onViewWillDisappear()
     ClearFocusGroup();
 
     lv_indev_t* indev = lv_indev_get_act();
+
     if (indev)
     {
         lv_indev_wait_release(indev);
@@ -138,17 +146,16 @@ void Bluetooth::BuildFocusGroup()
         return;
     }
 
-    /*
-     * 这里只在页面出现时建立一次焦点顺序。
-     * 不要放到 RefreshUI() 里反复执行，否则焦点会一直被重置。
-     */
     lv_group_remove_all_objs(group);
 
     lv_group_add_obj(group, View.ui.swBluetooth);
+
     lv_group_add_obj(group, View.ui.swHeartRate);
     lv_group_add_obj(group, View.ui.btnHeartRateName);
+
     lv_group_add_obj(group, View.ui.swCadence);
     lv_group_add_obj(group, View.ui.btnCadenceName);
+
     lv_group_add_obj(group, View.ui.btnExit);
 
     lv_group_focus_obj(View.ui.swBluetooth);
@@ -165,10 +172,13 @@ void Bluetooth::ClearFocusGroup()
     }
 
     lv_group_remove_obj(View.ui.swBluetooth);
+
     lv_group_remove_obj(View.ui.swHeartRate);
     lv_group_remove_obj(View.ui.btnHeartRateName);
+
     lv_group_remove_obj(View.ui.swCadence);
     lv_group_remove_obj(View.ui.btnCadenceName);
+
     lv_group_remove_obj(View.ui.btnExit);
 }
 
@@ -182,16 +192,52 @@ const char* Bluetooth::GetTargetName(DeviceTarget_t target)
     return CADENCE_DEVICE_NAME;
 }
 
-int Bluetooth::FindDeviceByName(const HAL::BluetoothInfo_t& info, const char* name)
+bool Bluetooth::NameContains(const char* name, const char* key)
 {
-    if (!name)
+    if (!name || !key)
+    {
+        return false;
+    }
+
+    std::string n = name;
+    std::string k = key;
+
+    std::transform(
+        n.begin(),
+        n.end(),
+        n.begin(),
+        [](unsigned char c)
+        {
+            return std::tolower(c);
+        }
+    );
+
+    std::transform(
+        k.begin(),
+        k.end(),
+        k.begin(),
+        [](unsigned char c)
+        {
+            return std::tolower(c);
+        }
+    );
+
+    return n.find(k) != std::string::npos;
+}
+
+int Bluetooth::FindDeviceByNameContains(
+    const HAL::BluetoothInfo_t& info,
+    const char* key
+)
+{
+    if (!key)
     {
         return -1;
     }
 
     for (int i = 0; i < info.deviceCount; i++)
     {
-        if (strcmp(info.devices[i].name, name) == 0)
+        if (NameContains(info.devices[i].name, key))
         {
             return i;
         }
@@ -200,28 +246,14 @@ int Bluetooth::FindDeviceByName(const HAL::BluetoothInfo_t& info, const char* na
     return -1;
 }
 
-bool Bluetooth::IsConnectedToName(const HAL::BluetoothInfo_t& info, const char* name)
+bool Bluetooth::IsHeartRateConnected(const HAL::BluetoothInfo_t& info)
 {
-    if (!info.connected || !name)
-    {
-        return false;
-    }
+    return info.heartRateConnected && info.heartRateNotifyEnabled;
+}
 
-    if (info.connectedName[0] && strcmp(info.connectedName, name) == 0)
-    {
-        return true;
-    }
-
-    int index = FindDeviceByName(info, name);
-
-    if (index >= 0 &&
-        info.connectedAddress[0] &&
-        strcmp(info.connectedAddress, info.devices[index].address) == 0)
-    {
-        return true;
-    }
-
-    return false;
+bool Bluetooth::IsCadenceConnected(const HAL::BluetoothInfo_t& info)
+{
+    return info.cadenceConnected && info.cadenceNotifyEnabled;
 }
 
 void Bluetooth::TryStartScan()
@@ -244,13 +276,8 @@ void Bluetooth::TryStartScan()
         return;
     }
 
-    bool needHeartRate = heartRateEnable &&
-                         !IsConnectedToName(info, HEART_RATE_DEVICE_NAME) &&
-                         FindDeviceByName(info, HEART_RATE_DEVICE_NAME) < 0;
-
-    bool needCadence = cadenceEnable &&
-                       !IsConnectedToName(info, CADENCE_DEVICE_NAME) &&
-                       FindDeviceByName(info, CADENCE_DEVICE_NAME) < 0;
+    bool needHeartRate = heartRateEnable && !IsHeartRateConnected(info);
+    bool needCadence = cadenceEnable && !IsCadenceConnected(info);
 
     if (!needHeartRate && !needCadence)
     {
@@ -282,8 +309,10 @@ void Bluetooth::OnBluetoothSwitchChanged()
 
         HAL::Bluetooth_Disconnect();
     }
-
-    lastScanTick = 0;
+    else
+    {
+        lastScanTick = 0;
+    }
 
     RefreshUI();
     TryStartScan();
@@ -299,15 +328,17 @@ void Bluetooth::OnHeartRateSwitchChanged()
     if (!info.enabled)
     {
         heartRateEnable = false;
+
         lv_obj_clear_state(View.ui.swHeartRate, LV_STATE_CHECKED);
         lv_label_set_text(View.ui.labelHeartRateHint, "Bluetooth Off");
+
         RefreshUI();
         return;
     }
 
-    if (!heartRateEnable && IsConnectedToName(info, HEART_RATE_DEVICE_NAME))
+    if (!heartRateEnable)
     {
-        HAL::Bluetooth_Disconnect();
+        HAL::Bluetooth_DisconnectHeartRate();
     }
 
     lastScanTick = 0;
@@ -326,15 +357,17 @@ void Bluetooth::OnCadenceSwitchChanged()
     if (!info.enabled)
     {
         cadenceEnable = false;
+
         lv_obj_clear_state(View.ui.swCadence, LV_STATE_CHECKED);
         lv_label_set_text(View.ui.labelCadenceHint, "Bluetooth Off");
+
         RefreshUI();
         return;
     }
 
-    if (!cadenceEnable && IsConnectedToName(info, CADENCE_DEVICE_NAME))
+    if (!cadenceEnable)
     {
-        HAL::Bluetooth_Disconnect();
+        HAL::Bluetooth_DisconnectCadence();
     }
 
     lastScanTick = 0;
@@ -374,23 +407,65 @@ void Bluetooth::ConnectTarget(DeviceTarget_t target)
         return;
     }
 
-    const char* targetName = GetTargetName(target);
-    int index = FindDeviceByName(info, targetName);
+    if (target == TARGET_HEART_RATE && IsHeartRateConnected(info))
+    {
+        lv_label_set_text(View.ui.labelHeartRateHint, "Connected");
+        return;
+    }
+
+    if (target == TARGET_CADENCE && IsCadenceConnected(info))
+    {
+        lv_label_set_text(View.ui.labelCadenceHint, "Connected");
+        return;
+    }
+
+    int index = -1;
+
+    if (target == TARGET_HEART_RATE)
+    {
+        index = FindDeviceByNameContains(info, HEART_RATE_DEVICE_NAME);
+
+        if (index < 0)
+        {
+            index = FindDeviceByNameContains(info, "heart");
+        }
+
+        if (index < 0)
+        {
+            index = FindDeviceByNameContains(info, "hr");
+        }
+    }
+    else
+    {
+        index = FindDeviceByNameContains(info, CADENCE_DEVICE_NAME);
+
+        if (index < 0)
+        {
+            index = FindDeviceByNameContains(info, "cad");
+        }
+
+        if (index < 0)
+        {
+            index = FindDeviceByNameContains(info, "bmi160");
+        }
+    }
 
     if (index < 0)
     {
         if (target == TARGET_HEART_RATE)
         {
-            lv_label_set_text(View.ui.labelHeartRateHint, "No Bluetooth Device");
+            lv_label_set_text(View.ui.labelHeartRateHint, "Searching...");
         }
         else
         {
-            lv_label_set_text(View.ui.labelCadenceHint, "No Bluetooth Device");
+            lv_label_set_text(View.ui.labelCadenceHint, "Searching...");
         }
 
         lastScanTick = 0;
+
         TryStartScan();
         RefreshUI();
+
         return;
     }
 
@@ -403,7 +478,16 @@ void Bluetooth::ConnectTarget(DeviceTarget_t target)
         lv_label_set_text(View.ui.labelCadenceHint, "Connecting...");
     }
 
-    bool ok = HAL::Bluetooth_Connect((uint8_t)index);
+    bool ok = false;
+
+    if (target == TARGET_HEART_RATE)
+    {
+        ok = HAL::Bluetooth_ConnectHeartRate((uint8_t)index);
+    }
+    else
+    {
+        ok = HAL::Bluetooth_ConnectCadence((uint8_t)index);
+    }
 
     if (!ok)
     {
@@ -428,11 +512,18 @@ void Bluetooth::RefreshUI()
     HAL::BluetoothInfo_t info = {};
     HAL::Bluetooth_GetInfo(&info);
 
-    bool heartFound = FindDeviceByName(info, HEART_RATE_DEVICE_NAME) >= 0;
-    bool cadenceFound = FindDeviceByName(info, CADENCE_DEVICE_NAME) >= 0;
+    bool heartFound =
+        FindDeviceByNameContains(info, HEART_RATE_DEVICE_NAME) >= 0 ||
+        FindDeviceByNameContains(info, "heart") >= 0 ||
+        FindDeviceByNameContains(info, "hr") >= 0;
 
-    bool heartConnected = IsConnectedToName(info, HEART_RATE_DEVICE_NAME);
-    bool cadenceConnected = IsConnectedToName(info, CADENCE_DEVICE_NAME);
+    bool cadenceFound =
+        FindDeviceByNameContains(info, CADENCE_DEVICE_NAME) >= 0 ||
+        FindDeviceByNameContains(info, "cad") >= 0 ||
+        FindDeviceByNameContains(info, "bmi160") >= 0;
+
+    bool heartConnected = IsHeartRateConnected(info);
+    bool cadenceConnected = IsCadenceConnected(info);
 
     /* 蓝牙总开关 */
     if (info.enabled)
@@ -448,13 +539,22 @@ void Bluetooth::RefreshUI()
             lv_label_set_text(View.ui.labelState, "On");
         }
 
-        lv_obj_set_style_text_color(View.ui.labelState, lv_color_hex(0x4FA3FF), 0);
+        lv_obj_set_style_text_color(
+            View.ui.labelState,
+            lv_color_hex(0x4FA3FF),
+            0
+        );
     }
     else
     {
         lv_obj_clear_state(View.ui.swBluetooth, LV_STATE_CHECKED);
         lv_label_set_text(View.ui.labelState, "Off");
-        lv_obj_set_style_text_color(View.ui.labelState, lv_color_hex(0x888888), 0);
+
+        lv_obj_set_style_text_color(
+            View.ui.labelState,
+            lv_color_hex(0x888888),
+            0
+        );
     }
 
     /* 心率开关显示 */
@@ -478,61 +578,153 @@ void Bluetooth::RefreshUI()
     }
 
     /* 心率名字按钮 */
-    lv_label_set_text(View.ui.labelHeartRateName, HEART_RATE_DEVICE_NAME);
+    if (info.heartRateName[0])
+    {
+        lv_label_set_text(View.ui.labelHeartRateName, info.heartRateName);
+    }
+    else
+    {
+        lv_label_set_text(View.ui.labelHeartRateName, HEART_RATE_DEVICE_NAME);
+    }
 
     if (!info.enabled)
     {
-        lv_obj_set_style_bg_color(View.ui.btnHeartRateName, lv_color_hex(0x3A3A3A), 0);
+        lv_obj_set_style_bg_color(
+            View.ui.btnHeartRateName,
+            lv_color_hex(0x3A3A3A),
+            0
+        );
+
         lv_label_set_text(View.ui.labelHeartRateHint, "Bluetooth Off");
     }
     else if (!heartRateEnable)
     {
-        lv_obj_set_style_bg_color(View.ui.btnHeartRateName, lv_color_hex(0x3A3A3A), 0);
+        lv_obj_set_style_bg_color(
+            View.ui.btnHeartRateName,
+            lv_color_hex(0x3A3A3A),
+            0
+        );
+
         lv_label_set_text(View.ui.labelHeartRateHint, "Heart Rate Off");
     }
     else if (heartConnected)
     {
-        lv_obj_set_style_bg_color(View.ui.btnHeartRateName, lv_color_hex(0x4FA3FF), 0);
-        lv_label_set_text(View.ui.labelHeartRateHint, "Connected");
+        lv_obj_set_style_bg_color(
+            View.ui.btnHeartRateName,
+            lv_color_hex(0x4FA3FF),
+            0
+        );
+
+        if (info.heartRateValid)
+        {
+            lv_label_set_text_fmt(
+                View.ui.labelHeartRateHint,
+                "Connected  %u bpm",
+                (unsigned int)info.heartRate
+            );
+        }
+        else
+        {
+            lv_label_set_text(View.ui.labelHeartRateHint, "Connected");
+        }
     }
     else if (heartFound)
     {
-        lv_obj_set_style_bg_color(View.ui.btnHeartRateName, lv_color_hex(0x3A3A3A), 0);
+        lv_obj_set_style_bg_color(
+            View.ui.btnHeartRateName,
+            lv_color_hex(0x3A3A3A),
+            0
+        );
+
         lv_label_set_text(View.ui.labelHeartRateHint, "Press to Connect");
     }
     else
     {
-        lv_obj_set_style_bg_color(View.ui.btnHeartRateName, lv_color_hex(0x3A3A3A), 0);
-        lv_label_set_text(View.ui.labelHeartRateHint, "No Bluetooth Device");
+        lv_obj_set_style_bg_color(
+            View.ui.btnHeartRateName,
+            lv_color_hex(0x3A3A3A),
+            0
+        );
+
+        lv_label_set_text(
+            View.ui.labelHeartRateHint,
+            info.scanning ? "Searching..." : "No Bluetooth Device"
+        );
     }
 
     /* 踏频名字按钮 */
-    lv_label_set_text(View.ui.labelCadenceName, CADENCE_DEVICE_NAME);
+    if (info.cadenceName[0])
+    {
+        lv_label_set_text(View.ui.labelCadenceName, info.cadenceName);
+    }
+    else
+    {
+        lv_label_set_text(View.ui.labelCadenceName, CADENCE_DEVICE_NAME);
+    }
 
     if (!info.enabled)
     {
-        lv_obj_set_style_bg_color(View.ui.btnCadenceName, lv_color_hex(0x3A3A3A), 0);
+        lv_obj_set_style_bg_color(
+            View.ui.btnCadenceName,
+            lv_color_hex(0x3A3A3A),
+            0
+        );
+
         lv_label_set_text(View.ui.labelCadenceHint, "Bluetooth Off");
     }
     else if (!cadenceEnable)
     {
-        lv_obj_set_style_bg_color(View.ui.btnCadenceName, lv_color_hex(0x3A3A3A), 0);
+        lv_obj_set_style_bg_color(
+            View.ui.btnCadenceName,
+            lv_color_hex(0x3A3A3A),
+            0
+        );
+
         lv_label_set_text(View.ui.labelCadenceHint, "Cadence Off");
     }
     else if (cadenceConnected)
     {
-        lv_obj_set_style_bg_color(View.ui.btnCadenceName, lv_color_hex(0x4FA3FF), 0);
-        lv_label_set_text(View.ui.labelCadenceHint, "Connected");
+        lv_obj_set_style_bg_color(
+            View.ui.btnCadenceName,
+            lv_color_hex(0x4FA3FF),
+            0
+        );
+
+        if (info.cadenceValid)
+        {
+            lv_label_set_text_fmt(
+                View.ui.labelCadenceHint,
+                "Connected  %u rpm",
+                (unsigned int)info.cadenceRpm
+            );
+        }
+        else
+        {
+            lv_label_set_text(View.ui.labelCadenceHint, "Connected");
+        }
     }
     else if (cadenceFound)
     {
-        lv_obj_set_style_bg_color(View.ui.btnCadenceName, lv_color_hex(0x3A3A3A), 0);
+        lv_obj_set_style_bg_color(
+            View.ui.btnCadenceName,
+            lv_color_hex(0x3A3A3A),
+            0
+        );
+
         lv_label_set_text(View.ui.labelCadenceHint, "Press to Connect");
     }
     else
     {
-        lv_obj_set_style_bg_color(View.ui.btnCadenceName, lv_color_hex(0x3A3A3A), 0);
-        lv_label_set_text(View.ui.labelCadenceHint, "No Bluetooth Device");
+        lv_obj_set_style_bg_color(
+            View.ui.btnCadenceName,
+            lv_color_hex(0x3A3A3A),
+            0
+        );
+
+        lv_label_set_text(
+            View.ui.labelCadenceHint,
+            info.scanning ? "Searching..." : "No Bluetooth Device"
+        );
     }
 }
 

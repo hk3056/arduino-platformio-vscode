@@ -14,14 +14,12 @@ public:
     virtual ~Bluetooth();
 
     virtual void onCustomAttrConfig();
-
     virtual void onViewLoad();
     virtual void onViewDidLoad();
     virtual void onViewWillAppear();
     virtual void onViewDidAppear();
     virtual void onViewWillDisappear();
     virtual void onViewDidDisappear();
-
     virtual void onViewUnload();
     virtual void onViewDidUnload();
 
@@ -35,11 +33,21 @@ private:
 private:
     void AttachEvent(lv_obj_t* obj);
 
-    void RefreshUI();
-    void TryStartScan();
-
     void BuildFocusGroup();
     void ClearFocusGroup();
+
+    const char* GetTargetName(DeviceTarget_t target);
+
+    int FindDeviceByNameContains(
+        const HAL::BluetoothInfo_t& info,
+        const char* key
+    );
+
+    bool NameContains(const char* name, const char* key);
+    bool IsHeartRateConnected(const HAL::BluetoothInfo_t& info);
+    bool IsCadenceConnected(const HAL::BluetoothInfo_t& info);
+
+    void TryStartScan();
 
     void OnBluetoothSwitchChanged();
     void OnHeartRateSwitchChanged();
@@ -47,10 +55,7 @@ private:
 
     void ConnectTarget(DeviceTarget_t target);
 
-    int FindDeviceByName(const HAL::BluetoothInfo_t& info, const char* name);
-    bool IsConnectedToName(const HAL::BluetoothInfo_t& info, const char* name);
-
-    const char* GetTargetName(DeviceTarget_t target);
+    void RefreshUI();
 
     static void onEvent(lv_event_t* event);
     static void onTimerUpdate(lv_timer_t* timer);
