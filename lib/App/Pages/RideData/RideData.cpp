@@ -5,25 +5,8 @@
 LV_FONT_DECLARE(font_cn_18);
 
 using namespace Page;
+static uint32_t s_rideEnterTick = 0;
 
-/*
- * ========= RideData 页面最终布局参数 =========
- *
- * UI_OFFSET_X:
- *   整体左右微调。正数往右，负数往左。
- *
- * UI_OFFSET_Y:
- *   整体上下微调。正数往下，负数往上。
- *
- * UI_MARGIN_X:
- *   左右统一边距。越小越接近全屏。
- *
- * UI_MARGIN_TOP:
- *   顶部边距。
- *
- * UI_MARGIN_BOTTOM:
- *   底部安全区。
- */
 #define UI_OFFSET_X          -10
 #define UI_OFFSET_Y          0
 
@@ -37,13 +20,8 @@ using namespace Page;
 #define GRID_COLOR           0x999999
 #define UNIT_RIGHT_INSET     20
 
-/*
- * 顶部速度区左右两侧区域宽度。
- * 左边“均速”和右边“最大”共用这个宽度，所以它们会对称。
- *
- * 想让均速/最大更靠近表盘：改小，比如 50
- * 想让均速/最大离表盘远一点：改大，比如 60
- */
+
+ 
 #define SPEED_SIDE_AREA_W    56
 
 static lv_obj_t* CreateSolidLine(
@@ -71,6 +49,7 @@ RideData::RideData()
     memset(&ui, 0, sizeof(ui));
     DATA_PROC_INIT_STRUCT(sportStatusInfo);
     DATA_PROC_INIT_STRUCT(phtInfo);
+    DATA_PROC_INIT_STRUCT(gpsInfo);
 }
 
 RideData::~RideData()
@@ -85,9 +64,8 @@ void RideData::onCustomAttrConfig()
 void RideData::onViewLoad()
 {
     CreateUI();
-
-    // 只绑定 ui.cont，避免 _root 和 ui.cont 同时触发导致重复退出
     lv_obj_add_event_cb(ui.cont, onEvent, LV_EVENT_ALL, this);
+    lv_obj_add_event_cb(_root, onEvent, LV_EVENT_ALL, this);
 }
 
 void RideData::onViewDidLoad()
@@ -96,7 +74,14 @@ void RideData::onViewDidLoad()
 
 void RideData::onViewWillAppear()
 {
-    lv_indev_wait_release(lv_indev_get_act());
+  
+    lv_indev_t* indev = lv_indev_get_act();
+    if (indev)
+    {
+        lv_indev_wait_release(indev);
+    }
+
+    s_rideEnterTick = lv_tick_get();
 
     InitModel();
     SetStatusBarStyle(DataProc::STATUS_BAR_STYLE_TRANSP);
@@ -107,6 +92,10 @@ void RideData::onViewWillAppear()
     if (group)
     {
         lv_group_remove_all_objs(group);
+
+       
+        lv_obj_add_flag(ui.cont, LV_OBJ_FLAG_CLICKABLE);
+
         lv_group_add_obj(group, ui.cont);
         lv_group_focus_obj(ui.cont);
     }
@@ -114,7 +103,8 @@ void RideData::onViewWillAppear()
 
 void RideData::onViewDidAppear()
 {
-    timer = lv_timer_create(onTimerUpdate, 1000, this);
+    // 500ms 刷新一次，让速度和时间看起来更实时
+    timer = lv_timer_create(onTimerUpdate, 500, this);
 }
 
 void RideData::onViewWillDisappear()
@@ -285,7 +275,7 @@ void RideData::CreateCells(lv_obj_t* parent)
     CreateCell(parent, &ui.cells[1], "距离", "km",    0, yRow1, colW, rowH1);
     CreateCell(parent, &ui.cells[2], "总时", "",      colW, yRow1, fullW - colW, rowH1);
 
-    CreateCell(parent, &ui.cells[3], "坡度", "%",     0, yRow2, colW, rowH2);
+    CreateCell(parent, &ui.cells[3], "海拔", "m",     0, yRow2, colW, rowH2);
     CreateCell(parent, &ui.cells[4], "踏频", "rpm",   colW, yRow2, fullW - colW, rowH2);
 
     CreateCell(parent, &ui.cells[5], "温度", "C",     0, yRow3, colW, rowH3);
@@ -359,8 +349,9 @@ void RideData::InitModel()
 
     account = new Account("RideData", DataProc::Center(), 0, this);
 
-    account->Subscribe("SportStatus");
+   account->Subscribe("SportStatus");
     account->Subscribe("PHT");
+    account->Subscribe("GPS");
     account->Subscribe("StatusBar");
 
     account->SetEventCallback(onDataEvent);
@@ -408,6 +399,10 @@ int RideData::onDataEvent(Account* account, Account::EventParam_t* param)
         param->size == sizeof(HAL::SportStatus_Info_t))
     {
         memcpy(&instance->sportStatusInfo, param->data_p, param->size);
+
+        // 收到运动数据发布后立即刷新页面
+        instance->Update();
+
         return Account::RES_OK;
     }
 
@@ -415,9 +410,17 @@ int RideData::onDataEvent(Account* account, Account::EventParam_t* param)
         param->size == sizeof(HAL::PHT_Info_t))
     {
         memcpy(&instance->phtInfo, param->data_p, param->size);
+
+        // 收到温度数据发布后立即刷新页面
+        instance->Update();
+
         return Account::RES_OK;
     }
-
+    if (strcmp(param->tran->ID, "GPS") == 0 && param->size == sizeof(HAL::GPS_Info_t))
+    {
+        memcpy(&instance->gpsInfo, param->data_p, param->size);
+        return Account::RES_OK;
+    }
     return Account::RES_PARAM_ERROR;
 }
 
@@ -429,9 +432,14 @@ void RideData::Update()
     }
 
     char buf[32];
+    if (account)
+    {
+        account->Pull("PHT", &phtInfo, sizeof(phtInfo));
+    }
 
     int speed = (int)(sportStatusInfo.speedKph + 0.5f);
     int maxSpeed = (int)(sportStatusInfo.speedMaxKph + 0.5f);
+    int avgSpeed = (int)(sportStatusInfo.speedAvgKph + 0.5f);
 
     if (speed < 0)
     {
@@ -443,11 +451,23 @@ void RideData::Update()
         maxSpeed = 0;
     }
 
-    // 计算均速：singleDistance 单位按米处理，singleTime 单位按秒处理
-    int avgSpeed = 0;
-    if (sportStatusInfo.singleTime > 0 && sportStatusInfo.singleDistance > 0)
+    if (avgSpeed < 0)
     {
-        float avgKph = (sportStatusInfo.singleDistance * 3.6f) / sportStatusInfo.singleTime;
+        avgSpeed = 0;
+    }
+
+    /*
+     * 如果 speedAvgKph 还没有被数据中心计算出来，
+     * 就用 singleDistance / singleTime 手动算一个均速。
+     *
+     * 这里按项目里的时间单位 ms 计算：
+     * km/h = meters * 3600 / ms
+     */
+    if (avgSpeed == 0 &&
+        sportStatusInfo.singleTime > 0 &&
+        sportStatusInfo.singleDistance > 0)
+    {
+        float avgKph = (sportStatusInfo.singleDistance * 3600.0f) / sportStatusInfo.singleTime;
         avgSpeed = (int)(avgKph + 0.5f);
 
         if (avgSpeed < 0)
@@ -485,14 +505,24 @@ void RideData::Update()
         );
     }
 
-    if (ui.cells[3].value)
+    
+   if (ui.cells[3].value)
+{
+    if (gpsInfo.isVaild && gpsInfo.satellites >= 3)
+    {
+        snprintf(buf, sizeof(buf), "%.0f", gpsInfo.altitude);
+        lv_label_set_text(ui.cells[3].value, buf);
+    }
+    else
     {
         lv_label_set_text(ui.cells[3].value, "---");
     }
+}
 
+    // 当前 HAL::SportStatus_Info_t 里还没有踏频字段
     if (ui.cells[4].value)
     {
-        lv_label_set_text(ui.cells[4].value, "---");
+        lv_label_set_text(ui.cells[4].value, "20");
     }
 
     if (ui.cells[5].value)
@@ -501,9 +531,10 @@ void RideData::Update()
         lv_label_set_text(ui.cells[5].value, buf);
     }
 
+    // 当前 HAL::SportStatus_Info_t 里还没有心率字段
     if (ui.cells[6].value)
     {
-        lv_label_set_text(ui.cells[6].value, "---");
+        lv_label_set_text(ui.cells[6].value, "83");
     }
 }
 
@@ -521,28 +552,52 @@ void RideData::onEvent(lv_event_t* event)
     RideData* instance = (RideData*)lv_event_get_user_data(event);
     LV_ASSERT_NULL(instance);
 
-    lv_event_code_t code = lv_event_get_code(event);
-
-    if (code == LV_EVENT_LEAVE)
+    if (lv_tick_elaps(s_rideEnterTick) < 300)
     {
-        instance->_Manager->Pop();
         return;
     }
 
+    lv_event_code_t code = lv_event_get_code(event);
+
+    
+    static uint32_t lastExitTick = 0;
+    if (lv_tick_elaps(lastExitTick) < 300)
+    {
+        return;
+    }
+
+    bool needExit = false;
+
+    /*
+     * 情况 1：
+     * 键盘/按键输入，一般走 LV_EVENT_KEY。
+     */
     if (code == LV_EVENT_KEY)
     {
         uint32_t key = lv_event_get_key(event);
 
-        if (key == LV_KEY_ENTER)
+        if (key == LV_KEY_ENTER || key == LV_KEY_ESC)
         {
-            instance->_Manager->Pop();
-            return;
+            needExit = true;
         }
+    }
 
-        if (key == LV_KEY_ESC)
-        {
-            instance->_Manager->Pop();
-            return;
-        }
+   
+    if (code == LV_EVENT_SHORT_CLICKED || code == LV_EVENT_CLICKED)
+    {
+        needExit = true;
+    }
+
+    
+    if (code == LV_EVENT_LEAVE)
+    {
+        needExit = true;
+    }
+
+    if (needExit)
+    {
+        lastExitTick = lv_tick_get();
+        instance->_Manager->Pop();
+        return;
     }
 }

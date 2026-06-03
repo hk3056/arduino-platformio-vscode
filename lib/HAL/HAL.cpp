@@ -60,6 +60,7 @@ static void HAL_TimerInterrputUpdate()
 void HAL::HAL_Init()
 {
     Serial.begin(115200);
+    delay(3000);
     Serial.println(VERSION_FIRMWARE_NAME);
     Serial.println("Version: " VERSION_SOFTWARE);
     Serial.println("Author: "  VERSION_AUTHOR_NAME);
@@ -73,8 +74,18 @@ void HAL::HAL_Init()
     Buzz_init();
     GPS_Init();
 
+#ifdef CONFIG_SENSOR_ENABLE
+    Serial.printf("CONFIG_SENSOR_ENABLE = %d\r\n", CONFIG_SENSOR_ENABLE);
+#else
+    Serial.println("CONFIG_SENSOR_ENABLE is NOT defined");
+#endif
+
 #if CONFIG_SENSOR_ENABLE
+    Serial.println("HAL_Sensor_Init start");
     HAL_Sensor_Init();
+    Serial.println("HAL_Sensor_Init end");
+#else
+    Serial.println("HAL_Sensor_Init skipped");
 #endif
 
     Audio_Init();

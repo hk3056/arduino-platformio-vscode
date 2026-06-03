@@ -61,8 +61,19 @@ void SystemInfos::onViewDidAppear()
     Serial.println("SystemInfos::onViewDidAppear");
 
     lv_group_t* group = lv_group_get_default();
-    if (group) {
-        View.onFocus(group);   // 内部已处理焦点为空的情况，负责滚动
+    if (group)
+    {
+        View.onFocus(group);
+    }
+
+    // 先立即刷新一次
+    Update();
+
+    // 创建定时器，每 500ms 刷新一次右侧数据
+    if (timer == nullptr)
+    {
+        timer = lv_timer_create(onTimerUpdate, 1200, this);
+        Serial.println("SystemInfos timer created");
     }
 }
 

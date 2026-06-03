@@ -52,6 +52,7 @@ private:
 
     HAL::SportStatus_Info_t sportStatusInfo;
     HAL::PHT_Info_t phtInfo;
+    HAL::GPS_Info_t gpsInfo;
 
 private:
     void CreateUI();
