@@ -1,28 +1,28 @@
 #include "RideData.h"
+#include "HAL_Bluetooth.h"
+
 #include <stdio.h>
 #include <string.h>
 
 LV_FONT_DECLARE(font_cn_18);
 
 using namespace Page;
+
 static uint32_t s_rideEnterTick = 0;
 
-#define UI_OFFSET_X          -10
-#define UI_OFFSET_Y          0
+#define UI_OFFSET_X        -10
+#define UI_OFFSET_Y        0
 
-#define UI_MARGIN_X          0
-#define UI_MARGIN_TOP        -1
-#define UI_MARGIN_BOTTOM     20
+#define UI_MARGIN_X        0
+#define UI_MARGIN_TOP      -1
+#define UI_MARGIN_BOTTOM   20
 
-#define SPEED_PANEL_H        112
-#define TIME_CELL_H          50
+#define SPEED_PANEL_H      112
+#define TIME_CELL_H        50
 
-#define GRID_COLOR           0x999999
-#define UNIT_RIGHT_INSET     20
-
-
- 
-#define SPEED_SIDE_AREA_W    56
+#define GRID_COLOR         0x999999
+#define UNIT_RIGHT_INSET   20
+#define SPEED_SIDE_AREA_W  56
 
 static lv_obj_t* CreateSolidLine(
     lv_obj_t* parent,
@@ -33,12 +33,14 @@ static lv_obj_t* CreateSolidLine(
 )
 {
     lv_obj_t* line = lv_obj_create(parent);
+
     lv_obj_remove_style_all(line);
     lv_obj_set_pos(line, x, y);
     lv_obj_set_size(line, w, h);
     lv_obj_set_style_bg_color(line, lv_color_hex(GRID_COLOR), 0);
     lv_obj_set_style_bg_opa(line, LV_OPA_COVER, 0);
     lv_obj_clear_flag(line, LV_OBJ_FLAG_SCROLLABLE);
+
     return line;
 }
 
@@ -47,6 +49,7 @@ RideData::RideData()
     , timer(nullptr)
 {
     memset(&ui, 0, sizeof(ui));
+
     DATA_PROC_INIT_STRUCT(sportStatusInfo);
     DATA_PROC_INIT_STRUCT(phtInfo);
     DATA_PROC_INIT_STRUCT(gpsInfo);
@@ -64,6 +67,7 @@ void RideData::onCustomAttrConfig()
 void RideData::onViewLoad()
 {
     CreateUI();
+
     lv_obj_add_event_cb(ui.cont, onEvent, LV_EVENT_ALL, this);
     lv_obj_add_event_cb(_root, onEvent, LV_EVENT_ALL, this);
 }
@@ -74,8 +78,8 @@ void RideData::onViewDidLoad()
 
 void RideData::onViewWillAppear()
 {
-  
     lv_indev_t* indev = lv_indev_get_act();
+
     if (indev)
     {
         lv_indev_wait_release(indev);
@@ -85,17 +89,15 @@ void RideData::onViewWillAppear()
 
     InitModel();
     SetStatusBarStyle(DataProc::STATUS_BAR_STYLE_TRANSP);
-
     Update();
 
     lv_group_t* group = lv_group_get_default();
+
     if (group)
     {
         lv_group_remove_all_objs(group);
 
-       
         lv_obj_add_flag(ui.cont, LV_OBJ_FLAG_CLICKABLE);
-
         lv_group_add_obj(group, ui.cont);
         lv_group_focus_obj(ui.cont);
     }
@@ -103,7 +105,7 @@ void RideData::onViewWillAppear()
 
 void RideData::onViewDidAppear()
 {
-    // 500ms 刷新一次，让速度和时间看起来更实时
+    // 500ms 刷新一次，让速度、时间、心率等数据实时更新
     timer = lv_timer_create(onTimerUpdate, 500, this);
 }
 
@@ -116,6 +118,7 @@ void RideData::onViewWillDisappear()
     }
 
     lv_group_t* group = lv_group_get_default();
+
     if (group)
     {
         lv_group_remove_all_objs(group);
@@ -199,8 +202,10 @@ void RideData::CreateSpeedPanel(lv_obj_t* parent)
     lv_obj_set_pos(ui.arcSpeed, sideAreaW + (centerAreaW - 102) / 2, 6);
     lv_arc_set_range(ui.arcSpeed, 0, 60);
     lv_arc_set_value(ui.arcSpeed, 0);
+
     lv_obj_remove_style(ui.arcSpeed, NULL, LV_PART_KNOB);
     lv_obj_clear_flag(ui.arcSpeed, LV_OBJ_FLAG_CLICKABLE);
+
     lv_obj_set_style_arc_width(ui.arcSpeed, 7, LV_PART_MAIN);
     lv_obj_set_style_arc_width(ui.arcSpeed, 7, LV_PART_INDICATOR);
     lv_obj_set_style_arc_color(ui.arcSpeed, lv_color_hex(0xd8d8d8), LV_PART_MAIN);
@@ -255,9 +260,20 @@ void RideData::CreateCells(lv_obj_t* parent)
     lv_coord_t rowH2 = remainH / 3;
     lv_coord_t rowH3 = remainH - rowH1 - rowH2;
 
-    if (rowH1 < 48) rowH1 = 48;
-    if (rowH2 < 48) rowH2 = 48;
-    if (rowH3 < 48) rowH3 = 48;
+    if (rowH1 < 48)
+    {
+        rowH1 = 48;
+    }
+
+    if (rowH2 < 48)
+    {
+        rowH2 = 48;
+    }
+
+    if (rowH3 < 48)
+    {
+        rowH3 = 48;
+    }
 
     const lv_coord_t yRow2 = yRow1 + rowH1;
     const lv_coord_t yRow3 = yRow2 + rowH2;
@@ -270,16 +286,16 @@ void RideData::CreateCells(lv_obj_t* parent)
     // 中间竖线，只从双列区域开始
     CreateSolidLine(parent, colW, yRow1, 1, fullH - yRow1);
 
-    CreateCell(parent, &ui.cells[0], "时间", "",      0, yTime, fullW, TIME_CELL_H);
+    CreateCell(parent, &ui.cells[0], "时间", "", 0, yTime, fullW, TIME_CELL_H);
 
-    CreateCell(parent, &ui.cells[1], "距离", "km",    0, yRow1, colW, rowH1);
-    CreateCell(parent, &ui.cells[2], "总时", "",      colW, yRow1, fullW - colW, rowH1);
+    CreateCell(parent, &ui.cells[1], "距离", "km", 0, yRow1, colW, rowH1);
+    CreateCell(parent, &ui.cells[2], "总时", "", colW, yRow1, fullW - colW, rowH1);
 
-    CreateCell(parent, &ui.cells[3], "海拔", "m",     0, yRow2, colW, rowH2);
-    CreateCell(parent, &ui.cells[4], "踏频", "rpm",   colW, yRow2, fullW - colW, rowH2);
+    CreateCell(parent, &ui.cells[3], "海拔", "m", 0, yRow2, colW, rowH2);
+    CreateCell(parent, &ui.cells[4], "踏频", "rpm", colW, yRow2, fullW - colW, rowH2);
 
-    CreateCell(parent, &ui.cells[5], "温度", "C",     0, yRow3, colW, rowH3);
-    CreateCell(parent, &ui.cells[6], "心率", "bpm",   colW, yRow3, fullW - colW, rowH3);
+    CreateCell(parent, &ui.cells[5], "温度", "C", 0, yRow3, colW, rowH3);
+    CreateCell(parent, &ui.cells[6], "心率", "bpm", colW, yRow3, fullW - colW, rowH3);
 }
 
 void RideData::CreateCell(
@@ -349,7 +365,7 @@ void RideData::InitModel()
 
     account = new Account("RideData", DataProc::Center(), 0, this);
 
-   account->Subscribe("SportStatus");
+    account->Subscribe("SportStatus");
     account->Subscribe("PHT");
     account->Subscribe("GPS");
     account->Subscribe("StatusBar");
@@ -390,6 +406,7 @@ int RideData::onDataEvent(Account* account, Account::EventParam_t* param)
     }
 
     RideData* instance = (RideData*)account->UserData;
+
     if (!instance)
     {
         return Account::RES_PARAM_ERROR;
@@ -416,11 +433,15 @@ int RideData::onDataEvent(Account* account, Account::EventParam_t* param)
 
         return Account::RES_OK;
     }
-    if (strcmp(param->tran->ID, "GPS") == 0 && param->size == sizeof(HAL::GPS_Info_t))
+
+    if (strcmp(param->tran->ID, "GPS") == 0 &&
+        param->size == sizeof(HAL::GPS_Info_t))
     {
         memcpy(&instance->gpsInfo, param->data_p, param->size);
+
         return Account::RES_OK;
     }
+
     return Account::RES_PARAM_ERROR;
 }
 
@@ -432,6 +453,7 @@ void RideData::Update()
     }
 
     char buf[32];
+
     if (account)
     {
         account->Pull("PHT", &phtInfo, sizeof(phtInfo));
@@ -467,7 +489,9 @@ void RideData::Update()
         sportStatusInfo.singleTime > 0 &&
         sportStatusInfo.singleDistance > 0)
     {
-        float avgKph = (sportStatusInfo.singleDistance * 3600.0f) / sportStatusInfo.singleTime;
+        float avgKph = (sportStatusInfo.singleDistance * 3600.0f) /
+                       sportStatusInfo.singleTime;
+
         avgSpeed = (int)(avgKph + 0.5f);
 
         if (avgSpeed < 0)
@@ -505,21 +529,23 @@ void RideData::Update()
         );
     }
 
-    
-   if (ui.cells[3].value)
-{
-    if (gpsInfo.isVaild && gpsInfo.satellites >= 3)
+    if (ui.cells[3].value)
     {
-        snprintf(buf, sizeof(buf), "%.0f", gpsInfo.altitude);
-        lv_label_set_text(ui.cells[3].value, buf);
+        if (gpsInfo.isVaild && gpsInfo.satellites >= 3)
+        {
+            snprintf(buf, sizeof(buf), "%.0f", gpsInfo.altitude);
+            lv_label_set_text(ui.cells[3].value, buf);
+        }
+        else
+        {
+            lv_label_set_text(ui.cells[3].value, "---");
+        }
     }
-    else
-    {
-        lv_label_set_text(ui.cells[3].value, "---");
-    }
-}
 
-    // 当前 HAL::SportStatus_Info_t 里还没有踏频字段
+    /*
+     * 踏频暂时保留原来的固定值。
+     * 后面如果踏频 BLE 模块接好了，再把这里改成 Bluetooth_GetCadence()。
+     */
     if (ui.cells[4].value)
     {
         lv_label_set_text(ui.cells[4].value, "20");
@@ -531,16 +557,38 @@ void RideData::Update()
         lv_label_set_text(ui.cells[5].value, buf);
     }
 
-    // 当前 HAL::SportStatus_Info_t 里还没有心率字段
+    /*
+     * 蓝牙心率显示。
+     * 蓝牙没连接、没有收到心率、心率无效时显示 ---。
+     * 收到有效心率时显示实际 bpm 数值。
+     */
     if (ui.cells[6].value)
     {
-        lv_label_set_text(ui.cells[6].value, "83");
+        if (HAL::Bluetooth_IsHeartRateValid())
+        {
+            uint8_t heartRate = HAL::Bluetooth_GetHeartRate();
+
+            if (heartRate > 0)
+            {
+                snprintf(buf, sizeof(buf), "%u", (unsigned int)heartRate);
+                lv_label_set_text(ui.cells[6].value, buf);
+            }
+            else
+            {
+                lv_label_set_text(ui.cells[6].value, "---");
+            }
+        }
+        else
+        {
+            lv_label_set_text(ui.cells[6].value, "---");
+        }
     }
 }
 
 void RideData::onTimerUpdate(lv_timer_t* timer)
 {
     RideData* instance = (RideData*)timer->user_data;
+
     if (instance)
     {
         instance->Update();
@@ -559,8 +607,8 @@ void RideData::onEvent(lv_event_t* event)
 
     lv_event_code_t code = lv_event_get_code(event);
 
-    
     static uint32_t lastExitTick = 0;
+
     if (lv_tick_elaps(lastExitTick) < 300)
     {
         return;
@@ -582,13 +630,11 @@ void RideData::onEvent(lv_event_t* event)
         }
     }
 
-   
     if (code == LV_EVENT_SHORT_CLICKED || code == LV_EVENT_CLICKED)
     {
         needExit = true;
     }
 
-    
     if (code == LV_EVENT_LEAVE)
     {
         needExit = true;

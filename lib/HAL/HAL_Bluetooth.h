@@ -2,21 +2,25 @@
 #define __HAL_BLUETOOTH_H
 
 #include "HAL.h"
-#include <Arduino.h>
 #include <NimBLEDevice.h>
 #include <string>
 
-namespace HAL {
-
+#ifndef HAL_BT_MAX_DEVICES
 #define HAL_BT_MAX_DEVICES 8
+#endif
 
-struct BluetoothDeviceItem_t {
+namespace HAL
+{
+
+struct BluetoothDeviceItem_t
+{
     char name[40];
     char address[24];
     int rssi;
 };
 
-struct BluetoothInfo_t {
+struct BluetoothInfo_t
+{
     bool enabled;
     bool scanning;
     bool connected;
@@ -24,29 +28,41 @@ struct BluetoothInfo_t {
     char connectedName[40];
     char connectedAddress[24];
 
+    /* 心率状态 */
+    bool heartRateServiceFound;
+    bool heartRateNotifyEnabled;
+    bool heartRateValid;
+    uint8_t heartRate;
+    uint32_t heartRateLastTick;
+
     uint8_t deviceCount;
     BluetoothDeviceItem_t devices[HAL_BT_MAX_DEVICES];
 };
 
-// ---------- 基础管理 ----------
+/* 基础管理 */
 bool Bluetooth_Init();
 void Bluetooth_Update();
 bool Bluetooth_Enable(bool en);
 bool Bluetooth_IsEnabled();
 
-// ---------- 扫描 ----------
+/* 扫描 */
 bool Bluetooth_StartScan(uint32_t scanMs = 4000);
 void Bluetooth_StopScan();
 
-// ---------- 连接 ----------
+/* 连接 */
 bool Bluetooth_Connect(uint8_t index);
 void Bluetooth_Disconnect();
 
-// ---------- 服务发现 ----------
+/* 心率 */
+bool Bluetooth_SubscribeHeartRate();
+bool Bluetooth_IsHeartRateValid();
+uint8_t Bluetooth_GetHeartRate();
+
+/* 服务发现 */
 bool Bluetooth_DiscoverServices();
 void Bluetooth_ClearServices();
 
-// ---------- 数据读写 ----------
+/* 数据读写 */
 bool Bluetooth_ReadCharacteristic(
     const char* serviceUUID,
     const char* charUUID,
@@ -68,7 +84,7 @@ bool Bluetooth_SubscribeNotification(
     bool notifications = true
 );
 
-// ---------- 信息 ----------
+/* 信息 */
 void Bluetooth_GetInfo(BluetoothInfo_t* info);
 
 } // namespace HAL

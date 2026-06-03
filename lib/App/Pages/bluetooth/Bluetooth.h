@@ -3,24 +3,34 @@
 
 #include "BluetoothView.h"
 #include "HAL_Bluetooth.h"
-#include <string>
 
-namespace Page {
+namespace Page
+{
 
-class Bluetooth : public PageBase {
+class Bluetooth : public PageBase
+{
 public:
     Bluetooth();
     virtual ~Bluetooth();
 
     virtual void onCustomAttrConfig();
+
     virtual void onViewLoad();
     virtual void onViewDidLoad();
     virtual void onViewWillAppear();
     virtual void onViewDidAppear();
     virtual void onViewWillDisappear();
     virtual void onViewDidDisappear();
+
     virtual void onViewUnload();
     virtual void onViewDidUnload();
+
+private:
+    enum DeviceTarget_t
+    {
+        TARGET_HEART_RATE = 0,
+        TARGET_CADENCE
+    };
 
 private:
     void AttachEvent(lv_obj_t* obj);
@@ -28,25 +38,30 @@ private:
     void RefreshUI();
     void TryStartScan();
 
-    void RebuildDeviceList(const HAL::BluetoothInfo_t& info);
-    void RebuildGroup();
+    void BuildFocusGroup();
+    void ClearFocusGroup();
+
+    void OnBluetoothSwitchChanged();
+    void OnHeartRateSwitchChanged();
+    void OnCadenceSwitchChanged();
+
+    void ConnectTarget(DeviceTarget_t target);
+
+    int FindDeviceByName(const HAL::BluetoothInfo_t& info, const char* name);
+    bool IsConnectedToName(const HAL::BluetoothInfo_t& info, const char* name);
+
+    const char* GetTargetName(DeviceTarget_t target);
 
     static void onEvent(lv_event_t* event);
     static void onTimerUpdate(lv_timer_t* timer);
 
 private:
-    static const uint8_t MAX_VISIBLE_DEVICES = 8;
-
     BluetoothView View;
 
     lv_timer_t* timer;
 
-    lv_obj_t* btnDevice[MAX_VISIBLE_DEVICES];
-    lv_obj_t* labelDevice[MAX_VISIBLE_DEVICES];
-
-    uint8_t deviceBtnCount;
-
-    std::string lastDeviceListStr;
+    bool heartRateEnable;
+    bool cadenceEnable;
 
     uint32_t lastScanTick;
 };
