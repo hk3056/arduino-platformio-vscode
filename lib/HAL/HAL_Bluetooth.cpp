@@ -1,47 +1,84 @@
 #include "HAL_Bluetooth.h"
-
-#include <string.h>
+#include <cstring>
 
 namespace HAL
 {
 
-/* 本机蓝牙名字 */
+/* =========================
+   本机蓝牙名字
+   ========================= */
 static const char* BT_LOCAL_NAME = "XTrack-Meter";
 
 /* 标准 BLE 心率服务 */
 static const char* HR_SERVICE_UUID = "180D";
 static const char* HR_MEASUREMENT_UUID = "2A37";
 
-/* 超过 5 秒没有收到心率，就认为心率无效 */
+/* 标准 BLE 踏频服务 CSC */
+static const char* CSC_SERVICE_UUID = "1816";
+static const char* CSC_MEASUREMENT_UUID = "2A5B";
+
 static const uint32_t HR_TIMEOUT_MS = 5000;
+static const uint32_t CADENCE_TIMEOUT_MS = 5000;
 
 static BluetoothInfo_t s_info = {};
-
 static NimBLEScan* s_scan = nullptr;
 static NimBLEClient* s_client = nullptr;
-
-static NimBLEAdvertisedDevice* s_devices[HAL_BT_MAX_DEVICES] = { nullptr };
+static NimBLEAdvertisedDevice* s_devices[HAL_BT_MAX_DEVICES] = {nullptr};
 
 static bool s_initOk = false;
 static bool s_nimbleInited = false;
-
 static portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 
-/* ========================= 工具函数 ========================= */
+static bool s_cadenceBaseValid = false;
+static uint16_t s_lastCrankRev = 0;
+static uint16_t s_lastCrankEventTime = 0;
 
+/* =========================
+   状态清除
+   ========================= */
 static void ResetHeartRateState()
 {
     portENTER_CRITICAL(&s_mux);
-
     s_info.heartRateServiceFound = false;
     s_info.heartRateNotifyEnabled = false;
     s_info.heartRateValid = false;
     s_info.heartRate = 0;
     s_info.heartRateLastTick = 0;
-
     portEXIT_CRITICAL(&s_mux);
 }
 
+static void ResetCadenceState()
+{
+    portENTER_CRITICAL(&s_mux);
+    s_info.cadenceServiceFound = false;
+    s_info.cadenceNotifyEnabled = false;
+    s_info.cadenceValid = false;
+    s_info.cadenceRpm = 0;
+    s_info.cadenceCrankRevCount = 0;
+    s_info.cadenceLastEventTime = 0;
+    s_info.cadenceLastTick = 0;
+
+    s_cadenceBaseValid = false;
+    s_lastCrankRev = 0;
+    s_lastCrankEventTime = 0;
+    portEXIT_CRITICAL(&s_mux);
+}
+
+static void ResetConnectedState()
+{
+    portENTER_CRITICAL(&s_mux);
+    s_info.connected = false;
+    s_info.connectedName[0] = '\0';
+    s_info.connectedAddress[0] = '\0';
+    portEXIT_CRITICAL(&s_mux);
+
+    ResetHeartRateState();
+    ResetCadenceState();
+}
+
+/* =========================
+   心率解析
+   ========================= */
 static bool ParseHeartRateMeasurement(const uint8_t* data, size_t len, uint8_t* outBpm)
 {
     if (!data || !outBpm || len < 2)
@@ -50,14 +87,7 @@ static bool ParseHeartRateMeasurement(const uint8_t* data, size_t len, uint8_t* 
     }
 
     uint8_t flags = data[0];
-
-    /*
-     * BLE 心率标准格式：
-     * bit0 = 0：心率是 8 位，data[1]
-     * bit0 = 1：心率是 16 位，data[1] + data[2]
-     */
     bool is16Bit = flags & 0x01;
-
     uint16_t bpm = 0;
 
     if (is16Bit)
@@ -74,10 +104,6 @@ static bool ParseHeartRateMeasurement(const uint8_t* data, size_t len, uint8_t* 
         bpm = data[1];
     }
 
-    /*
-     * 你的心率模块无效时可能会上报 0。
-     * 这里把明显不合理的数据过滤掉。
-     */
     if (bpm < 40 || bpm > 220)
     {
         return false;
@@ -125,6 +151,132 @@ static void HeartRateNotifyCallback(
     );
 }
 
+/* =========================
+   CSC 踏频解析
+   ========================= */
+static bool ParseCSCMeasurement(
+    const uint8_t* data,
+    size_t len,
+    uint16_t* outRev,
+    uint16_t* outEventTime
+)
+{
+    if (!data || !outRev || !outEventTime || len < 1)
+    {
+        return false;
+    }
+
+    uint8_t flags = data[0];
+    bool wheelPresent = flags & 0x01;
+    bool crankPresent = flags & 0x02;
+
+    size_t offset = 1;
+
+    if (wheelPresent)
+    {
+        if (len < offset + 6)
+        {
+            return false;
+        }
+
+        offset += 6;
+    }
+
+    if (!crankPresent)
+    {
+        return false;
+    }
+
+    if (len < offset + 4)
+    {
+        return false;
+    }
+
+    uint16_t crankRev = data[offset] | ((uint16_t)data[offset + 1] << 8);
+    uint16_t crankEventTime = data[offset + 2] | ((uint16_t)data[offset + 3] << 8);
+
+    *outRev = crankRev;
+    *outEventTime = crankEventTime;
+
+    return true;
+}
+
+static void CadenceNotifyCallback(
+    NimBLERemoteCharacteristic* chr,
+    uint8_t* data,
+    size_t length,
+    bool isNotify
+)
+{
+    (void)chr;
+    (void)isNotify;
+
+    uint16_t crankRev = 0;
+    uint16_t eventTime = 0;
+
+    bool ok = ParseCSCMeasurement(data, length, &crankRev, &eventTime);
+
+    if (!ok)
+    {
+        portENTER_CRITICAL(&s_mux);
+        s_info.cadenceValid = false;
+        s_info.cadenceRpm = 0;
+        s_info.cadenceLastTick = millis();
+        portEXIT_CRITICAL(&s_mux);
+
+        Serial.printf("[BT][CAD] parse failed, len=%d\n", (int)length);
+        return;
+    }
+
+    uint16_t rpm = 0;
+    bool rpmValid = false;
+
+    if (s_cadenceBaseValid)
+    {
+        uint16_t deltaRev = crankRev - s_lastCrankRev;
+        uint16_t deltaTime = eventTime - s_lastCrankEventTime;
+
+        if (deltaRev > 0 && deltaTime > 0)
+        {
+            uint32_t rpmCalc = ((uint32_t)deltaRev * 60UL * 1024UL) / deltaTime;
+
+            if (rpmCalc <= 250)
+            {
+                rpm = (uint16_t)rpmCalc;
+                rpmValid = true;
+            }
+        }
+    }
+
+    s_lastCrankRev = crankRev;
+    s_lastCrankEventTime = eventTime;
+    s_cadenceBaseValid = true;
+
+    portENTER_CRITICAL(&s_mux);
+    s_info.cadenceCrankRevCount = crankRev;
+    s_info.cadenceLastEventTime = eventTime;
+    s_info.cadenceLastTick = millis();
+
+    if (rpmValid)
+    {
+        s_info.cadenceRpm = rpm;
+        s_info.cadenceValid = true;
+    }
+    portEXIT_CRITICAL(&s_mux);
+
+    Serial.printf(
+        "[BT][CAD] notify len=%d, rev=%u, event=%u, valid=%d, rpm=%u\n",
+        (int)length,
+        crankRev,
+        eventTime,
+        rpmValid ? 1 : 0,
+        rpm
+    );
+}
+
+/* =========================
+   扫描设备列表
+   ========================= */
 static void ClearSavedDeviceCopies()
 {
     for (int i = 0; i < HAL_BT_MAX_DEVICES; i++)
@@ -157,10 +309,8 @@ static void ClearDeviceList()
     ClearSavedDeviceCopies();
 
     portENTER_CRITICAL(&s_mux);
-
     memset(s_info.devices, 0, sizeof(s_info.devices));
     s_info.deviceCount = 0;
-
     portEXIT_CRITICAL(&s_mux);
 }
 
@@ -187,6 +337,11 @@ static void SaveOrUpdateDevice(const NimBLEAdvertisedDevice* dev)
 
     NimBLEAdvertisedDevice* copyDev = new NimBLEAdvertisedDevice(*dev);
 
+    char logName[40] = {0};
+    char logAddr[24] = {0};
+    int logRssi = dev->getRSSI();
+    int logCount = 0;
+
     portENTER_CRITICAL(&s_mux);
 
     int index = FindDeviceIndexByAddressNoLock(addr.c_str());
@@ -205,29 +360,29 @@ static void SaveOrUpdateDevice(const NimBLEAdvertisedDevice* dev)
     }
 
     BluetoothDeviceItem_t* item = &s_info.devices[index];
-
     memset(item, 0, sizeof(BluetoothDeviceItem_t));
-
     strncpy(item->name, name.c_str(), sizeof(item->name) - 1);
     strncpy(item->address, addr.c_str(), sizeof(item->address) - 1);
-
     item->rssi = dev->getRSSI();
 
     delete s_devices[index];
     s_devices[index] = copyDev;
 
+    strncpy(logName, item->name, sizeof(logName) - 1);
+    strncpy(logAddr, item->address, sizeof(logAddr) - 1);
+    logRssi = item->rssi;
+    logCount = s_info.deviceCount;
+
     portEXIT_CRITICAL(&s_mux);
 
     Serial.printf(
         "[BT] found/update: %s / %s / RSSI=%d / count=%d\n",
-        name.c_str(),
-        addr.c_str(),
-        dev->getRSSI(),
-        s_info.deviceCount
+        logName,
+        logAddr,
+        logRssi,
+        logCount
     );
 }
-
-/* ========================= 扫描回调 ========================= */
 
 class AdvCallbacks : public NimBLEScanCallbacks
 {
@@ -254,13 +409,13 @@ public:
 
 static AdvCallbacks s_advCallbacks;
 
-/* ========================= 客户端回调 ========================= */
-
 class ClientCallbacks : public NimBLEClientCallbacks
 {
 public:
-    void onConnect(NimBLEClient*) override
+    void onConnect(NimBLEClient* client) override
     {
+        (void)client;
+
         portENTER_CRITICAL(&s_mux);
         s_info.connected = true;
         portEXIT_CRITICAL(&s_mux);
@@ -268,30 +423,19 @@ public:
         Serial.println("[BT] client connected callback");
     }
 
-    void onDisconnect(NimBLEClient*, int reason) override
+    void onDisconnect(NimBLEClient* client, int reason) override
     {
-        portENTER_CRITICAL(&s_mux);
-
-        s_info.connected = false;
-        s_info.connectedName[0] = '\0';
-        s_info.connectedAddress[0] = '\0';
-
-        s_info.heartRateServiceFound = false;
-        s_info.heartRateNotifyEnabled = false;
-        s_info.heartRateValid = false;
-        s_info.heartRate = 0;
-        s_info.heartRateLastTick = 0;
-
-        portEXIT_CRITICAL(&s_mux);
-
+        (void)client;
+        ResetConnectedState();
         Serial.printf("[BT] disconnected, reason=%d\n", reason);
     }
 };
 
 static ClientCallbacks s_clientCallbacks;
 
-/* ========================= 初始化 ========================= */
-
+/* =========================
+   初始化
+   ========================= */
 bool Bluetooth_Init()
 {
     if (s_initOk)
@@ -300,19 +444,19 @@ bool Bluetooth_Init()
     }
 
     memset(&s_info, 0, sizeof(s_info));
-
     s_info.enabled = false;
     s_info.scanning = false;
     s_info.connected = false;
 
     ClearSavedDeviceCopies();
 
-    s_initOk = true;
+    s_cadenceBaseValid = false;
+    s_lastCrankRev = 0;
+    s_lastCrankEventTime = 0;
 
+    s_initOk = true;
     return true;
 }
-
-/* ========================= 蓝牙开关 ========================= */
 
 bool Bluetooth_Enable(bool en)
 {
@@ -331,13 +475,7 @@ bool Bluetooth_Enable(bool en)
         if (!s_nimbleInited)
         {
             NimBLEDevice::init(BT_LOCAL_NAME);
-
-            /*
-             * 设置蓝牙发射功率。
-             * 9 一般对应较高功率，便于扫描到心率模块。
-             */
             NimBLEDevice::setPower(9);
-
             s_nimbleInited = true;
         }
 
@@ -367,18 +505,16 @@ bool Bluetooth_Enable(bool en)
         }
 
         portENTER_CRITICAL(&s_mux);
-
         s_info.enabled = true;
         s_info.scanning = false;
         s_info.connected = false;
-
         portEXIT_CRITICAL(&s_mux);
 
         ResetHeartRateState();
+        ResetCadenceState();
         ClearDeviceList();
 
         Serial.println("[BT] enabled");
-
         return true;
     }
 
@@ -394,14 +530,14 @@ bool Bluetooth_Enable(bool en)
     ClearDeviceList();
 
     portENTER_CRITICAL(&s_mux);
-
     memset(&s_info, 0, sizeof(s_info));
     s_info.enabled = false;
-
+    s_cadenceBaseValid = false;
+    s_lastCrankRev = 0;
+    s_lastCrankEventTime = 0;
     portEXIT_CRITICAL(&s_mux);
 
     Serial.println("[BT] disabled");
-
     return true;
 }
 
@@ -416,8 +552,9 @@ bool Bluetooth_IsEnabled()
     return en;
 }
 
-/* ========================= 扫描 ========================= */
-
+/* =========================
+   扫描
+   ========================= */
 bool Bluetooth_StartScan(uint32_t scanMs)
 {
     if (!s_info.enabled || !s_scan)
@@ -471,8 +608,9 @@ void Bluetooth_StopScan()
     portEXIT_CRITICAL(&s_mux);
 }
 
-/* ========================= 连接 ========================= */
-
+/* =========================
+   连接
+   ========================= */
 bool Bluetooth_Connect(uint8_t index)
 {
     if (!s_info.enabled || !s_client)
@@ -494,15 +632,14 @@ bool Bluetooth_Connect(uint8_t index)
     }
 
     ResetHeartRateState();
+    ResetCadenceState();
 
-    char name[40] = { 0 };
-    char address[24] = { 0 };
+    char name[40] = {0};
+    char address[24] = {0};
 
     portENTER_CRITICAL(&s_mux);
-
     strncpy(name, s_info.devices[index].name, sizeof(name) - 1);
     strncpy(address, s_info.devices[index].address, sizeof(address) - 1);
-
     portEXIT_CRITICAL(&s_mux);
 
     Serial.printf("[BT] connect to: %s / %s\n", name, address);
@@ -511,36 +648,19 @@ bool Bluetooth_Connect(uint8_t index)
 
     if (!ok)
     {
-        portENTER_CRITICAL(&s_mux);
-
-        s_info.connected = false;
-        s_info.connectedName[0] = '\0';
-        s_info.connectedAddress[0] = '\0';
-
-        portEXIT_CRITICAL(&s_mux);
-
-        ResetHeartRateState();
-
+        ResetConnectedState();
         Serial.println("[BT] connect failed");
-
         return false;
     }
 
     portENTER_CRITICAL(&s_mux);
-
     strncpy(s_info.connectedName, name, sizeof(s_info.connectedName) - 1);
     strncpy(s_info.connectedAddress, address, sizeof(s_info.connectedAddress) - 1);
-
     s_info.connected = true;
-
     portEXIT_CRITICAL(&s_mux);
 
     Serial.println("[BT] connected");
 
-    /*
-     * 连接成功后自动订阅心率服务。
-     * 如果连接的是踏频模块，这里订阅失败也没关系。
-     */
     if (Bluetooth_SubscribeHeartRate())
     {
         Serial.println("[BT][HR] subscribe OK");
@@ -548,6 +668,15 @@ bool Bluetooth_Connect(uint8_t index)
     else
     {
         Serial.println("[BT][HR] subscribe failed or not heart rate device");
+    }
+
+    if (Bluetooth_SubscribeCadence())
+    {
+        Serial.println("[BT][CAD] subscribe OK");
+    }
+    else
+    {
+        Serial.println("[BT][CAD] subscribe failed or not cadence device");
     }
 
     return true;
@@ -560,23 +689,12 @@ void Bluetooth_Disconnect()
         s_client->disconnect();
     }
 
-    portENTER_CRITICAL(&s_mux);
-
-    s_info.connected = false;
-    s_info.connectedName[0] = '\0';
-    s_info.connectedAddress[0] = '\0';
-
-    s_info.heartRateServiceFound = false;
-    s_info.heartRateNotifyEnabled = false;
-    s_info.heartRateValid = false;
-    s_info.heartRate = 0;
-    s_info.heartRateLastTick = 0;
-
-    portEXIT_CRITICAL(&s_mux);
+    ResetConnectedState();
 }
 
-/* ========================= 心率 ========================= */
-
+/* =========================
+   心率
+   ========================= */
 bool Bluetooth_SubscribeHeartRate()
 {
     if (!s_client || !s_client->isConnected())
@@ -594,7 +712,6 @@ bool Bluetooth_SubscribeHeartRate()
         portEXIT_CRITICAL(&s_mux);
 
         Serial.println("[BT][HR] service 180D not found");
-
         return false;
     }
 
@@ -611,18 +728,12 @@ bool Bluetooth_SubscribeHeartRate()
         portEXIT_CRITICAL(&s_mux);
 
         Serial.println("[BT][HR] characteristic 2A37 not found");
-
         return false;
     }
 
-    /*
-     * 先读一次。
-     * 有些模块刚连接时读到 0，是正常的，后面 notify 会更新。
-     */
     if (chr->canRead())
     {
         std::string value = chr->readValue();
-
         uint8_t bpm = 0;
         bool valid = ParseHeartRateMeasurement(
             (const uint8_t*)value.data(),
@@ -631,11 +742,9 @@ bool Bluetooth_SubscribeHeartRate()
         );
 
         portENTER_CRITICAL(&s_mux);
-
         s_info.heartRate = valid ? bpm : 0;
         s_info.heartRateValid = valid;
         s_info.heartRateLastTick = millis();
-
         portEXIT_CRITICAL(&s_mux);
 
         Serial.printf("[BT][HR] read valid=%d, bpm=%u\n", valid ? 1 : 0, bpm);
@@ -648,12 +757,10 @@ bool Bluetooth_SubscribeHeartRate()
         portEXIT_CRITICAL(&s_mux);
 
         Serial.println("[BT][HR] characteristic can not notify/indicate");
-
         return false;
     }
 
     bool useNotify = chr->canNotify();
-
     bool ok = chr->subscribe(useNotify, HeartRateNotifyCallback);
 
     portENTER_CRITICAL(&s_mux);
@@ -685,8 +792,99 @@ uint8_t Bluetooth_GetHeartRate()
     return bpm;
 }
 
-/* ========================= 服务发现 ========================= */
+/* =========================
+   踏频
+   ========================= */
+bool Bluetooth_SubscribeCadence()
+{
+    if (!s_client || !s_client->isConnected())
+    {
+        return false;
+    }
 
+    NimBLERemoteService* service = s_client->getService(CSC_SERVICE_UUID);
+
+    if (!service)
+    {
+        portENTER_CRITICAL(&s_mux);
+        s_info.cadenceServiceFound = false;
+        s_info.cadenceNotifyEnabled = false;
+        portEXIT_CRITICAL(&s_mux);
+
+        Serial.println("[BT][CAD] service 1816 not found");
+        return false;
+    }
+
+    portENTER_CRITICAL(&s_mux);
+    s_info.cadenceServiceFound = true;
+    portEXIT_CRITICAL(&s_mux);
+
+    NimBLERemoteCharacteristic* chr = service->getCharacteristic(CSC_MEASUREMENT_UUID);
+
+    if (!chr)
+    {
+        portENTER_CRITICAL(&s_mux);
+        s_info.cadenceNotifyEnabled = false;
+        portEXIT_CRITICAL(&s_mux);
+
+        Serial.println("[BT][CAD] characteristic 2A5B not found");
+        return false;
+    }
+
+    if (!chr->canNotify() && !chr->canIndicate())
+    {
+        portENTER_CRITICAL(&s_mux);
+        s_info.cadenceNotifyEnabled = false;
+        portEXIT_CRITICAL(&s_mux);
+
+        Serial.println("[BT][CAD] characteristic can not notify/indicate");
+        return false;
+    }
+
+    bool useNotify = chr->canNotify();
+    bool ok = chr->subscribe(useNotify, CadenceNotifyCallback);
+
+    portENTER_CRITICAL(&s_mux);
+    s_info.cadenceNotifyEnabled = ok;
+    s_info.cadenceValid = false;
+    s_info.cadenceRpm = 0;
+    s_info.cadenceCrankRevCount = 0;
+    s_info.cadenceLastEventTime = 0;
+    s_info.cadenceLastTick = millis();
+
+    s_cadenceBaseValid = false;
+    s_lastCrankRev = 0;
+    s_lastCrankEventTime = 0;
+    portEXIT_CRITICAL(&s_mux);
+
+    return ok;
+}
+
+bool Bluetooth_IsCadenceValid()
+{
+    bool valid = false;
+
+    portENTER_CRITICAL(&s_mux);
+    valid = s_info.cadenceValid;
+    portEXIT_CRITICAL(&s_mux);
+
+    return valid;
+}
+
+uint16_t Bluetooth_GetCadenceRpm()
+{
+    uint16_t rpm = 0;
+
+    portENTER_CRITICAL(&s_mux);
+    rpm = s_info.cadenceRpm;
+    portEXIT_CRITICAL(&s_mux);
+
+    return rpm;
+}
+
+/* =========================
+   服务发现
+   ========================= */
 bool Bluetooth_DiscoverServices()
 {
     if (!s_client || !s_client->isConnected())
@@ -694,16 +892,21 @@ bool Bluetooth_DiscoverServices()
         return false;
     }
 
-    return Bluetooth_SubscribeHeartRate();
+    bool hrOk = Bluetooth_SubscribeHeartRate();
+    bool cadOk = Bluetooth_SubscribeCadence();
+
+    return hrOk || cadOk;
 }
 
 void Bluetooth_ClearServices()
 {
     ResetHeartRateState();
+    ResetCadenceState();
 }
 
-/* ========================= 通用读写接口 ========================= */
-
+/* =========================
+   通用读写接口
+   ========================= */
 bool Bluetooth_ReadCharacteristic(
     const char* serviceUUID,
     const char* charUUID,
@@ -742,7 +945,6 @@ bool Bluetooth_ReadCharacteristic(
     }
 
     outValue = chr->readValue();
-
     return true;
 }
 
@@ -825,8 +1027,9 @@ bool Bluetooth_SubscribeNotification(
     return chr->subscribe(notifications, cb);
 }
 
-/* ========================= 信息获取 ========================= */
-
+/* =========================
+   信息获取
+   ========================= */
 void Bluetooth_GetInfo(BluetoothInfo_t* info)
 {
     if (!info)
@@ -839,8 +1042,9 @@ void Bluetooth_GetInfo(BluetoothInfo_t* info)
     portEXIT_CRITICAL(&s_mux);
 }
 
-/* ========================= 循环更新 ========================= */
-
+/* =========================
+   循环更新
+   ========================= */
 void Bluetooth_Update()
 {
     if (!s_info.enabled)
@@ -861,26 +1065,10 @@ void Bluetooth_Update()
 
         if (!realConnected && s_info.connected)
         {
-            portENTER_CRITICAL(&s_mux);
-
-            s_info.connected = false;
-            s_info.connectedName[0] = '\0';
-            s_info.connectedAddress[0] = '\0';
-
-            s_info.heartRateServiceFound = false;
-            s_info.heartRateNotifyEnabled = false;
-            s_info.heartRateValid = false;
-            s_info.heartRate = 0;
-            s_info.heartRateLastTick = 0;
-
-            portEXIT_CRITICAL(&s_mux);
+            ResetConnectedState();
         }
     }
 
-    /*
-     * 心率超时处理：
-     * 手指拿开、模块停止发送、连接异常时，Ride 页面显示 ---
-     */
     uint32_t now = millis();
 
     portENTER_CRITICAL(&s_mux);
@@ -893,6 +1081,20 @@ void Bluetooth_Update()
     {
         s_info.heartRateValid = false;
         s_info.heartRate = 0;
+    }
+
+    if (
+        s_info.cadenceValid &&
+        s_info.cadenceLastTick > 0 &&
+        now - s_info.cadenceLastTick > CADENCE_TIMEOUT_MS
+    )
+    {
+        s_info.cadenceValid = false;
+        s_info.cadenceRpm = 0;
+
+        s_cadenceBaseValid = false;
+        s_lastCrankRev = 0;
+        s_lastCrankEventTime = 0;
     }
 
     portEXIT_CRITICAL(&s_mux);

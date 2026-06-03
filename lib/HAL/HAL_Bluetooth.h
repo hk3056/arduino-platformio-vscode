@@ -2,6 +2,7 @@
 #define __HAL_BLUETOOTH_H
 
 #include "HAL.h"
+#include <Arduino.h>
 #include <NimBLEDevice.h>
 #include <string>
 
@@ -35,6 +36,15 @@ struct BluetoothInfo_t
     uint8_t heartRate;
     uint32_t heartRateLastTick;
 
+    /* 踏频状态 */
+    bool cadenceServiceFound;
+    bool cadenceNotifyEnabled;
+    bool cadenceValid;
+    uint16_t cadenceRpm;
+    uint16_t cadenceCrankRevCount;
+    uint16_t cadenceLastEventTime;
+    uint32_t cadenceLastTick;
+
     uint8_t deviceCount;
     BluetoothDeviceItem_t devices[HAL_BT_MAX_DEVICES];
 };
@@ -57,6 +67,11 @@ void Bluetooth_Disconnect();
 bool Bluetooth_SubscribeHeartRate();
 bool Bluetooth_IsHeartRateValid();
 uint8_t Bluetooth_GetHeartRate();
+
+/* 踏频 */
+bool Bluetooth_SubscribeCadence();
+bool Bluetooth_IsCadenceValid();
+uint16_t Bluetooth_GetCadenceRpm();
 
 /* 服务发现 */
 bool Bluetooth_DiscoverServices();

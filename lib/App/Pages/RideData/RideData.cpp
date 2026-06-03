@@ -547,9 +547,26 @@ void RideData::Update()
      * 后面如果踏频 BLE 模块接好了，再把这里改成 Bluetooth_GetCadence()。
      */
     if (ui.cells[4].value)
+{
+    if (HAL::Bluetooth_IsCadenceValid())
     {
-        lv_label_set_text(ui.cells[4].value, "20");
+        uint16_t cadence = HAL::Bluetooth_GetCadenceRpm();
+
+        if (cadence > 0)
+        {
+            snprintf(buf, sizeof(buf), "%u", (unsigned int)cadence);
+            lv_label_set_text(ui.cells[4].value, buf);
+        }
+        else
+        {
+            lv_label_set_text(ui.cells[4].value, "---");
+        }
     }
+    else
+    {
+        lv_label_set_text(ui.cells[4].value, "---");
+    }
+}
 
     if (ui.cells[5].value)
     {
